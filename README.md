@@ -7,25 +7,26 @@ An OS-agnostic, portable, extensible 3D pipeline for the BYU Center for Animatio
 ## Repo structure
 ```
 sandwich-pipeline/
-├── Bobo Painter.lnk  # Linux and Windows launchers for DCCs. 
-├── Bobaya.desktop       # These are at the root so they're easy for artists to locate
-├── ...
+├── desktop_launchers      # .desktop files for the DCC launchers; installed via install_desktop_launchers.py
+├── install_desktop_launchers.py
 ├── LICENSE
-├── pipeline
-│   ├── env.py.md         # How to build set up env.py
-│   ├── lib               # Python libraries and other resource files
-│   ├── __main__.py
-│   ├── pipe              # Python module for code that is imported and run from the DCC
-│   ├── shared            # Utilities used by `pipe` and `software` modules
-│   └── software          # Module called by `__main__.py` to initialize environments and launch DCCs
+├── resources              # First-party non-Python data (OCIO, USD kinds, icons, splash, hdri, tex, sbs)
+├── src
+│   ├── env.py.md         # How to set up env.py
+│   ├── __main__.py       # Entry point; dispatches to dcc.<name>.launch.<Dcc>Launcher
+│   ├── sitecustomize.py
+│   ├── framework         # DCCLauncher / DCCRuntime ABCs + dispatch + concrete launcher base
+│   ├── core              # Cross-DCC platform code (asset, shot, versioning, telemetry, etc.)
+│   └── dcc               # Per-DCC integrations (launch.py + runtime.py + site/ + third_party/)
+├── telemetry-backend     # Postgres/Grafana configuration
 ├── pyproject.toml
 └── README.md
 ```
 
 ## Setting up a copy of `sandwich-pipeline`
 1. Fork this repo and clone it to the production location.
-1. Create an `pipeline/env.py` file following the specifications in `pipeline/env.py.md`. This will get things like ShotGrid auth set up, and provide OS-specific DCC executable paths.
-1. Install needed python libraries into `pipeline/lib/python/any`. Use `uv sync` (or `.githooks/update-venv`) to set up the project environment.
+1. Create an `src/env.py` file following the specifications in `src/env.py.md`. This will get things like ShotGrid auth set up, and provide OS-specific DCC executable paths.
+1. Run `uv sync` (or `.githooks/update-venv`) to set up the project environment.
 1. Clone branches for development locally, copy over the env files and get to work!
 
 ## Setting up a dev environment in the labs

@@ -1,0 +1,63 @@
+"""Shared versioning core for working-file history workflows."""
+
+from .model import (
+    BackupResult,
+    DCC_HOUDINI,
+    DCC_MAYA,
+    DCC_SUBSTANCE,
+    VersionOwner,
+    VersionRecord,
+    VersionSnapshotMember,
+    VersionStreamSpec,
+    normalize_text,
+    stream_dirname,
+    stream_filename,
+    stream_key_for,
+)
+from .service import (
+    list_version_records,
+    path_matches_stream,
+    promote_version,
+    save_version,
+)
+from .store import (
+    VERSION_MANIFEST_FILENAME,
+    backup_file,
+    backup_if_changed,
+    current_record,
+    get_manifest_path,
+    load_manifest,
+    next_version,
+    record_publish,
+    version_label,
+    versioned_filename,
+)
+
+__all__ = [
+    "BackupResult",
+    "DCC_HOUDINI",
+    "DCC_MAYA",
+    "DCC_SUBSTANCE",
+    "VERSION_MANIFEST_FILENAME",
+    "VersionOwner",
+    "VersionRecord",
+    "VersionSnapshotMember",
+    "VersionStreamSpec",
+    "backup_file",
+    "backup_if_changed",
+    "current_record",
+    "get_manifest_path",
+    "list_version_records",
+    "load_manifest",
+    "next_version",
+    "normalize_text",
+    "path_matches_stream",
+    "promote_version",
+    "record_publish",
+    "save_version",
+    "stream_dirname",
+    "stream_filename",
+    "stream_key_for",
+    "version_label",
+    "versioned_filename",
+]
