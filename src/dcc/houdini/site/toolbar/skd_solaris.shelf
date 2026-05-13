@@ -235,7 +235,7 @@ loptoolutils.referenceTestAsset(node, asset_name)]]></script>
     <memberToolshelf name="skd_assets"/>
     <memberToolshelf name="skd_sets"/>
     <memberToolshelf name="test_geometry"/>
-    <memberToolshelf name="shelf_1"/>
+    <memberToolshelf name="testing"/>
     <memberToolshelf name="shelf_2"/>
     <memberToolshelf name="create"/>
     <memberToolshelf name="characters"/>
@@ -246,5 +246,10 @@ loptoolutils.referenceTestAsset(node, asset_name)]]></script>
     <memberToolshelf name="collisions"/>
     <memberToolshelf name="RenderManRIS"/>
     <memberToolshelf name="RenderMan26"/>
+    <memberToolshelf name="testing"/>
   </shelfSet>
+
+  <toolshelf name="testing" label="Testing">
+    <memberTool name="flashbang"/>
+  </toolshelf>
 </shelfDocument>
