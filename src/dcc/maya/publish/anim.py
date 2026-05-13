@@ -15,6 +15,8 @@ from core.util.paths import get_production_path
 from core.ui import MessageDialog
 from core.struct.timeline import Timeline
 
+from dcc.maya.util.time import maintain_current_time
+
 from .anim_lock import confirm_anim_republish_allowed
 from .publisher import Publisher
 from .usdchaser import ExportChaser, ExportChaserMode
@@ -28,6 +30,7 @@ class AnimPublisher(Publisher):
     _PUBLISH_KIND = "anim"
 
     _shot: Shot
+    _timeline: Timeline
     _init_success: bool
 
     def __init__(self, spline_publish: bool = False):
@@ -45,6 +48,7 @@ class AnimPublisher(Publisher):
             self._init_success = False
 
         self._shot = self._conn.get_shot(code=shot_code)
+        self._timeline = Timeline.from_shot(self._shot, preroll_duration=55)
         self.spline_publish = spline_publish
 
     def _prepublish(self) -> bool:
@@ -58,6 +62,8 @@ class AnimPublisher(Publisher):
             publish_path=self._get_save_path(),
         ):
             return False
+
+        _set_origin_keyframes(self._timeline.preroll)
 
         cache_sets = mc.ls("::" + CACHE_SET, sets=True)
         mc.select(*cache_sets, replace=True)
@@ -73,7 +79,6 @@ class AnimPublisher(Publisher):
         return True
 
     def _get_mayausd_kwargs(self) -> dict[str, Any]:
-        timeline = Timeline.from_shot(self._shot, preroll_duration=55)
         chaser_mode = (
             ExportChaserMode.ANIM
             if not self.spline_publish
@@ -83,7 +88,7 @@ class AnimPublisher(Publisher):
             "chaser": [ExportChaser.ID],
             "chaserArgs": [
                 (ExportChaser.ID, "mode", chaser_mode),
-                (ExportChaser.ID, "timeline", timeline.to_json()),
+                (ExportChaser.ID, "timeline", self._timeline.to_json()),
             ],
             "exportColorSets": False,
             "exportComponentTags": False,
@@ -91,8 +96,8 @@ class AnimPublisher(Publisher):
             "shadingMode": "none",
             "exportMaterials": False,
             "frameRange": (
-                timeline.preroll,
-                timeline.end,
+                self._timeline.preroll,
+                self._timeline.end,
             ),
             "frameStride": 1.0,
             "stripNamespaces": False,
@@ -119,3 +124,24 @@ class AnimPublisher(Publisher):
         # root_layer = Sdf.Layer.FindOrOpen(str(self._publish_path))
         # root_layer.subLayerPaths.append("post-process.usd")
         # root_layer.Save()
+
+
+def _set_origin_keyframes(start_frame: int, transition_length: int = 4) -> None:
+    """
+    Add keyframes at the beginning of preroll to transition from zeroed out
+    at the origin into the anim.
+    """
+    with maintain_current_time():
+        keyframed = [
+            o
+            for o in mc.ls(dagObjects=True, type="transform")
+            if mc.keyframe(o, query=True)
+        ]
+        mc.currentTime(start_frame + transition_length)
+        mc.setKeyframe(*keyframed, insert=True)
+        mc.currentTime(start_frame)
+        mc.xform(
+            *keyframed,
+            matrix=(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1),
+        )
+        mc.setKeyframe(*keyframed)
