@@ -15,6 +15,7 @@ from filelock import FileLock
 if TYPE_CHECKING:
     import typing
 
+from core.color import ocio_env_vars
 from core.util.paths import (
     get_production_path,
     get_shared_telemetry_spool_dir,
@@ -96,7 +97,10 @@ class HoudiniLauncher(Launcher):
             "JOB": str(resolve_mapped_path(get_production_path())),
             # Ensure LD_LIBRARY_PATH is unset to allow nesting pipe instances
             "LD_LIBRARY_PATH": None,
-            "OCIO": str(repo_root / "resources/ocio/sandwich-v01/config.ocio"),
+            # OCIO + RMAN_COLOR_CONFIG_DIR (RfH reads the latter for
+            # texture-conversion rules). Filename hygiene, active
+            # displays/views all come from the helper.
+            **ocio_env_vars(include_renderman=True),
             "PIPE_LOG_LEVEL": log.getEffectiveLevel(),
             "PIPE_TELEMETRY_SPOOL_DIR": str(get_shared_telemetry_spool_dir()),
             # Root for vendored Houdini packages (MOPS, LYNX, axiom, tlops, ae_SVG)
@@ -121,7 +125,6 @@ class HoudiniLauncher(Launcher):
                     os.environ.get("RMANTREE", "") + "/bin",
                 ]
             ),
-            "RMAN_COLOR_CONFIG_DIR": str(repo_root / "resources/ocio/sandwich-v01"),
             # Force Qt5 bindings in Houdini to avoid Qt6/PySide6 conflicts
             "QT_PREFERRED_BINDING": "PySide2",
             # Explicitly set Tractor location

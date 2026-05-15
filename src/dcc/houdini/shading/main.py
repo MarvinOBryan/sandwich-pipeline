@@ -349,12 +349,10 @@ class MatlibSpecBuilder:
     @staticmethod
     def _extension_rank(map_name: str, extension: str) -> int:
         ext = extension.lower()
-        if map_name == "Normal":
-            order = ("b2r", "tex", "exr", "png", "jpg", "jpeg")
-        elif map_name in _PREVIEW_MAPS:
-            order = ("jpeg", "jpg", "png", "exr", "tex", "b2r")
+        if map_name in _PREVIEW_MAPS:
+            order = ("jpeg", "jpg", "png", "exr", "tex")
         else:
-            order = ("tex", "exr", "png", "jpg", "jpeg", "b2r")
+            order = ("tex", "exr", "png", "jpg", "jpeg")
         try:
             return order.index(ext)
         except ValueError:

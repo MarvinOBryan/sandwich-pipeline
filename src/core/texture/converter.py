@@ -5,7 +5,7 @@ import os
 import re
 import subprocess
 import time
-from math import ceil, floor, log2, sqrt
+from math import ceil, floor, sqrt
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -23,9 +23,25 @@ from dcc.substance_painter.util.progress import (
     PublishStage,
 )
 from core.util import silent_startupinfo
-from core.util.paths import get_repo_root
 
 log = logging.getLogger(__name__)
+
+# Painter exports follow `<Asset>_<MapType>_<colorSpace>.<udim>.png`.
+_COLORSPACE_SUFFIX_RE = re.compile(r"_([^_.]+)\.\d{4}\.png$")
+
+
+def _parse_colorspace_suffix(img_path: str) -> str:
+    """Extract the OCIO colorspace from a Painter filename suffix."""
+    basename = os.path.basename(img_path)
+    match = _COLORSPACE_SUFFIX_RE.search(basename)
+    if match is None:
+        log.warning(
+            "Texture filename %s doesn't follow the `_<colorSpace>` "
+            "suffix convention. Tagging as Raw; check the publisher.",
+            basename,
+        )
+        return "Raw"
+    return match.group(1)
 
 
 def _process_qt_events() -> None:
@@ -137,13 +153,18 @@ class TexConverter:
                 file.unlink()
 
         @self._debug_out
-        def tex_cmd(img: str, is_color: bool = False) -> list[str]:
-            # Use oiiotool for color maps. We intentionally avoid ACES conversions
-            # here; Substance exports should already be in sRGB for color maps.
+        def tex_cmd(img: str, is_color: bool, colorspace: str) -> list[str]:
+            # Color maps go through oiiotool — Substance exports are already
+            # in sRGB-Texture (color) or Raw (data) per the per-channel
+            # OCIO role. `--attrib oiio:ColorSpace` records that interpretation
+            # into the TX metadata so RenderMan and any other OIIO consumer
+            # reads the file as the right colorspace without relying on the
+            # shader-side `inputs:sourceColorSpace` attribute.
             # fmt: off
             return [
                 str(Executables.oiiotool),
                 img,
+                "--attrib", "oiio:ColorSpace", colorspace,
                 *(
                     [
                         "-d", "uint8",
@@ -157,49 +178,6 @@ class TexConverter:
             ]
             # fmt: on
 
-        @self._debug_out
-        def b2r_cmd(img: str) -> list[str]:
-            # fmt: off
-            return [
-                str(Executables.txmake),
-                "-resize", "round-",
-                "-mode", "periodic",
-                "-filter", "box",
-                "-mipfilter", "box",
-                "-bumprough", "2", "0", "0", "0", "0", "1",
-                "-newer",
-                img,
-                f"{str(self.tex_path / Path(img).stem)}.b2r",
-            ]
-            # fmt: on
-
-        @self._debug_out
-        def norm2height(img: str) -> list[str]:
-            """Convert normal map to height map
-            This is necessary because if we run b2r conversion directly on a
-            normal map, reversed UV tiles will have incorrect normals.
-            We can't run b2r conversion directly on the height map from
-            Substance because that doesn't include normal painting or
-            stickers. Thus, the remaining option is to convert the Normal map
-            from Substance back into a height map."""
-            img_dims = [str(int(log2(d))) for d in self._img_dims(img)]
-            # fmt: off
-            return [
-                str(Executables.sbsrender),
-                "render",
-                "--engine", "d3d11pc",
-                "--exr-format-compression", "zip",
-                "--output-bit-depth", "16f",
-                "--output-format", "exr",
-                "--input", str(get_repo_root() / "resources/sbs/normal2height.sbsar"),
-                "--set-entry", f"input@{img}",
-                "--set-value", f"$outputsize@{','.join(img_dims)}",
-                "--output-path", str(Path(img).parent),
-                "--output-name", img.replace(".pre-b2r", ""),
-            ]
-            # fmt: on
-
-        pre_cmdlines: list[list[str]] = []
         cmdlines: list[list[str]] = []
         for imgs in self.imgs_by_tex_set:
             log.debug(imgs)
@@ -207,15 +185,14 @@ class TexConverter:
                 if img.endswith(".jpeg"):
                     continue
                 log.debug(f"        {img}")
-                if "pre-b2r" in img:
-                    pre_cmdlines.append(norm2height(img))
-                    cmdlines.append(b2r_cmd(img.replace(".pre-b2r", "")))
-                else:
-                    cmdlines.append(tex_cmd(img, ("Color" in img or "Emissive" in img)))
+                cmdlines.append(
+                    tex_cmd(
+                        img,
+                        is_color=("Color" in img or "Emissive" in img),
+                        colorspace=_parse_colorspace_suffix(img),
+                    )
+                )
 
-        self._wait_and_check_cmds(
-            pre_cmdlines, batch_size=self.batch_size, skip_check=True
-        )
         total_tex = len(cmdlines)
         if total_tex <= 0:
             self._report_progress(

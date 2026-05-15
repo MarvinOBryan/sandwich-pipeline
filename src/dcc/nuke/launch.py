@@ -5,6 +5,7 @@ import os
 import platform
 from pathlib import Path
 
+from core.color import ocio_env_vars
 from core.util.paths import (
     get_shared_telemetry_spool_dir,
     resolve_mapped_path,
@@ -34,7 +35,7 @@ class NukeLauncher(Launcher):
             # survive the repo's location moving.
             "DCC_NUKE_THIRD_PARTY": str(this_path.parent / "third_party"),
             "NUKE_PATH": str(resolve_mapped_path(this_path.parent / "site")),
-            "OCIO": str(repo_root / "resources/ocio/sandwich-v01/config.ocio"),
+            **ocio_env_vars(),
             "PIPE_TELEMETRY_SPOOL_DIR": str(get_shared_telemetry_spool_dir()),
             "PYTHONPATH": str(src_path),
             "QT_SCALE_FACTOR": os.getenv("NUKE_SCALE_FACTOR")
