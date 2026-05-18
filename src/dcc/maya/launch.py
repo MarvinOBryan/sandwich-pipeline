@@ -83,10 +83,7 @@ class MayaLauncher(Launcher):
                     str(third_party / "studiolibrary/src"),
                 ]
             ),
-            # OCIO + RMAN_COLOR_CONFIG_DIR via the color helper — Maya
-            # uses both (RfM consults the latter for texture-conversion
-            # rules; the standalone Maya viewport uses OCIO).
-            **ocio_env_vars(include_renderman=True),
+            **ocio_env_vars(),
             "QT_FONT_DPI": os.getenv("MAYA_FONT_DPI") if system == "Linux" else None,
             "QT_PLUGIN_PATH": None,
             # Configure Asset Resolver
