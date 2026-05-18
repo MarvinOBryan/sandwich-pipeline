@@ -1,0 +1,40 @@
+"""Force pipeline OCIO display+view on every Blender file load.
+
+Blender's bundled startup.blend bakes in display='sRGB', view='AgX',
+output_view='Standard' — none of which exist in our config. Blender
+auto-remaps the viewport to the closest match (ends up on
+ACES 1.0 - SDR Video) but the render output override lands on
+Un-tone-mapped, which would silently strip the ACES Output Transform
+from saved renders.
+
+We reassert the pipeline defaults on every load and flip output color
+management to FOLLOW_SCENE so renders share the viewport's view.
+"""
+
+from __future__ import annotations
+
+import bpy
+from bpy.app.handlers import persistent
+
+from core.color import DEFAULT_VIEW, DISPLAY
+
+
+@persistent
+def _apply_color_defaults(_dummy) -> None:
+    for scene in bpy.data.scenes:
+        scene.display_settings.display_device = DISPLAY
+        scene.view_settings.view_transform = DEFAULT_VIEW
+        scene.render.image_settings.color_management = "FOLLOW_SCENE"
+
+
+def register():
+    bpy.app.handlers.load_post.append(_apply_color_defaults)
+
+
+def unregister():
+    if _apply_color_defaults in bpy.app.handlers.load_post:
+        bpy.app.handlers.load_post.remove(_apply_color_defaults)
+
+
+if __name__ == "__main__":
+    register()
