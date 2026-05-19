@@ -860,8 +860,9 @@ class MatlibNodeBuilder:
         if not path:
             return
         self._set_parm_if_exists(node, "filename", path)
-        # The shader is the single source of truth for the texture's colorspace
-        alias = "srgb_texture" if is_color else "raw"
+        # Aliases must be keys in `rman_color_config_<version>.json` so the
+        # pxrtexture's `filename_colorspace` dropdown resolves.
+        alias = "srgb_texture" if is_color else "data"
         self._set_parm_if_exists(node, "filename_colorspace", alias)
 
     @staticmethod

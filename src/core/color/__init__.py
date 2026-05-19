@@ -39,11 +39,12 @@ def config_path() -> Path:
 
 
 def ocio_env_vars() -> dict[str, str]:
-    """OCIO-related env vars every DCC launcher should merge into its env."""
     return {
         "OCIO": str(config_path()),
         "OCIO_ACTIVE_DISPLAYS": DISPLAY,
         "OCIO_ACTIVE_VIEWS": ACTIVE_VIEWS,
+        # Read by RenderMan to find `rman_color_config_<version>.json`.
+        "RMAN_COLOR_CONFIG_DIR": str(config_dir()),
     }
 
 

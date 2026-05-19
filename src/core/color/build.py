@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -24,6 +25,14 @@ from core.color import (
 # to a newer cg-config URI raises the profile version and breaks RenderMan
 # until the RenderMan-bundled OCIO catches up.
 DEFAULT_SOURCE_URI = "ocio://cg-config-v1.0.0_aces-v1.3_ocio-v2.1"
+
+# Pixar's stock keys for RfH's pxrtexture `filename_colorspace` dropdown.
+_RMAN_OCIO_ALIASES = {
+    "rendering": "acescg",
+    "srgb_texture": "srgbtex",
+    "srgb_linear": "srgblin",
+    "data": "data",
+}
 
 
 def _load_ocio():
@@ -81,6 +90,8 @@ def build_config(ocio, source_uri: str):
     config.setRole("compositing_linear", acescg)
     config.setRole("default", raw)
     config.setRole("data", raw)
+    # Pixar's RfH docs require `srgb_linear` to always be defined.
+    config.setRole("srgb_linear", linear_srgb)
     config.setRole("color_picking", srgb_texture)
     config.setRole("matte_paint", srgb_texture)
     config.setRole("texture_paint", srgb_texture)
@@ -182,6 +193,11 @@ def main() -> int:
 
     config = build_config(ocio, args.source)
     (output_dir / "config.ocio").write_text(config.serialize(), encoding="utf-8")
+    # RfH looks up this file by the config dir's name
+    (output_dir / f"rman_color_config_{CONFIG_VERSION}.json").write_text(
+        json.dumps({"ocio_aliases": _RMAN_OCIO_ALIASES}, indent=2) + "\n",
+        encoding="utf-8",
+    )
     (output_dir / "README.md").write_text(
         _build_readme(args.source, Path(__file__).resolve()),
         encoding="utf-8",
