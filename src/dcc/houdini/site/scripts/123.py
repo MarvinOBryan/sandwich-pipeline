@@ -1,9 +1,4 @@
-"""Force the pipeline's OCIO display+view on every Houdini startup.
-
-Houdini persists the last-used viewport view in user prefs, which
-otherwise overrides our active_views ordering and lands artists on
-Un-tone-mapped instead of the ACES Output Transform.
-"""
+"""Force the ACES viewport transform on every Houdini startup"""
 
 from __future__ import annotations
 

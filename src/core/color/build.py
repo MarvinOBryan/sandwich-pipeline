@@ -21,9 +21,6 @@ from core.color import (
     config_dir,
 )
 
-# OCIO 2.1 profile — loads in RenderMan 26.3 (bundled OCIO 2.2). Bumping
-# to a newer cg-config URI raises the profile version and breaks RenderMan
-# until the RenderMan-bundled OCIO catches up.
 DEFAULT_SOURCE_URI = "ocio://cg-config-v1.0.0_aces-v1.3_ocio-v2.1"
 
 # Pixar's stock keys for RfH's pxrtexture `filename_colorspace` dropdown.

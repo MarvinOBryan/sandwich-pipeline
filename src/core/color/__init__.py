@@ -1,16 +1,4 @@
-"""Runtime entry point for the sandwich OCIO config.
-
-Single source of truth for the active config version and the env vars
-that point every DCC launcher at it. Version bumps happen in one place
-(`CONFIG_VERSION` below) and all six launchers + viewport-default code
-follow.
-
-This module lives in `__init__.py` (rather than a submodule like
-`env.py`) to avoid shadowing the top-level `env` module that
-`core.util.paths` imports.
-
-See `context/color.md` for the architectural overview.
-"""
+"""Runtime entry point for the sandwich OCIO config."""
 
 from __future__ import annotations
 
@@ -20,11 +8,8 @@ from core.util.paths import get_production_path
 
 CONFIG_VERSION = "sandwich-v01"
 
-# Display and view selected as the pipeline default, matching the
-# `active_displays` / `active_views` set by `build.py`.
 DISPLAY = "sRGB - Display"
 DEFAULT_VIEW = "ACES 1.0 - SDR Video"
-# First item is the default; the latter two are kept for inspection only.
 ACTIVE_VIEWS = "ACES 1.0 - SDR Video, Un-tone-mapped, Raw"
 
 

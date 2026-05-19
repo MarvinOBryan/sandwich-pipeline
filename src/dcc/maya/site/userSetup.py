@@ -13,17 +13,11 @@ def main():
         if plugin not in pluginInfo:
             mc.loadPlugin(plugin)
 
-    # Apply the pipeline OCIO viewport default. The $OCIO env var
-    # (set by the launcher) provides the config; Maya's color
-    # management must be turned on explicitly and pointed at the
-    # canonical "view (display)" pair so playblasts match dailies.
-    # See context/color.md.
+    # Apply the pipeline OCIO viewport default
     from core.color import DEFAULT_VIEW, DISPLAY
 
     mc.colorManagementPrefs(e=True, cmEnabled=True)
-    mc.colorManagementPrefs(
-        e=True, viewTransformName=f"{DEFAULT_VIEW} ({DISPLAY})"
-    )
+    mc.colorManagementPrefs(e=True, viewTransformName=f"{DEFAULT_VIEW} ({DISPLAY})")
 
     from core.util.paths import get_production_path
 
@@ -37,6 +31,7 @@ def main():
 
     # register USD Export chaser
     import mayaUsd.lib as mayaUsdLib  # type: ignore[import-not-found]
+
     from dcc.maya.publish import ExportChaser
 
     mayaUsdLib.ExportChaser.Register(ExportChaser, ExportChaser.ID)
