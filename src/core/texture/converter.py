@@ -14,34 +14,16 @@ if TYPE_CHECKING:
 
     RT = typing.TypeVar("RT")  # return type
 
-from env import Executables
-
 from core import telemetry
+from core.util import silent_startupinfo
 from dcc.substance_painter.util.progress import (
     PublishProgressCallback,
     PublishProgressUpdate,
     PublishStage,
 )
-from core.util import silent_startupinfo
+from env import Executables
 
 log = logging.getLogger(__name__)
-
-# Painter exports follow `<Asset>_<MapType>_<colorSpace>.<udim>.png`.
-_COLORSPACE_SUFFIX_RE = re.compile(r"_([^_.]+)\.\d{4}\.png$")
-
-
-def _parse_colorspace_suffix(img_path: str) -> str:
-    """Extract the OCIO colorspace from a Painter filename suffix."""
-    basename = os.path.basename(img_path)
-    match = _COLORSPACE_SUFFIX_RE.search(basename)
-    if match is None:
-        log.warning(
-            "Texture filename %s doesn't follow the `_<colorSpace>` "
-            "suffix convention. Tagging as Raw; check the publisher.",
-            basename,
-        )
-        return "Raw"
-    return match.group(1)
 
 
 def _process_qt_events() -> None:
@@ -153,18 +135,12 @@ class TexConverter:
                 file.unlink()
 
         @self._debug_out
-        def tex_cmd(img: str, is_color: bool, colorspace: str) -> list[str]:
-            # Color maps go through oiiotool — Substance exports are already
-            # in sRGB-Texture (color) or Raw (data) per the per-channel
-            # OCIO role. `--attrib oiio:ColorSpace` records that interpretation
-            # into the TX metadata so RenderMan and any other OIIO consumer
-            # reads the file as the right colorspace without relying on the
-            # shader-side `inputs:sourceColorSpace` attribute.
+        def tex_cmd(img: str, is_color: bool) -> list[str]:
+            # Colorspace is set by the `pxrtexture` node (`filename_colorspace`)
             # fmt: off
             return [
                 str(Executables.oiiotool),
                 img,
-                "--attrib", "oiio:ColorSpace", colorspace,
                 *(
                     [
                         "-d", "uint8",
@@ -189,7 +165,6 @@ class TexConverter:
                     tex_cmd(
                         img,
                         is_color=("Color" in img or "Emissive" in img),
-                        colorspace=_parse_colorspace_suffix(img),
                     )
                 )
 

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import datetime
-import json
 import subprocess
 import sys
 from pathlib import Path
@@ -25,15 +24,6 @@ from core.color import (
 # to a newer cg-config URI raises the profile version and breaks RenderMan
 # until the RenderMan-bundled OCIO catches up.
 DEFAULT_SOURCE_URI = "ocio://cg-config-v1.0.0_aces-v1.3_ocio-v2.1"
-
-# Pixar-stock filename-suffix mapping mirrored from
-# `$RMANTREE/etc/rman_color_config_ACES-1.3.json`.
-_RMAN_OCIO_ALIASES = {
-    "rendering": "acescg",
-    "srgb_texture": "srgbtex",
-    "srgb_linear": "srgblin",
-    "data": "data",
-}
 
 
 def _load_ocio():
@@ -108,17 +98,27 @@ def build_config(ocio, source_uri: str):
     config.setRole("substance_3d_painter_bitmap_export_16bit", srgb_texture)
     config.setRole("substance_3d_painter_bitmap_export_floating", linear_srgb)
 
-    # The base config provides `lin_srgb` but not the more explicit
-    # `linear_srgb`. Painter's `$colorSpace` token and HDRI tooling
-    # use the underscore form, so we add it.
-    cs = config.getColorSpace(linear_srgb)
-    cs.addAlias("linear_srgb")
-    config.addColorSpace(cs)
+    # Snake-case aliases on each common canonical
+    for canonical, alias in (
+        (acescg, "acescg"),
+        (srgb_texture, "srgb_texture"),
+        (linear_srgb, "linear_srgb"),
+        (raw, "raw"),
+    ):
+        cs = config.getColorSpace(canonical)
+        cs.addAlias(alias)
+        config.addColorSpace(cs)
 
     rules = config.getFileRules()
+    # Painter's `$colorSpace` filename token emits canonical OCIO names
+    # verbatim (spaces, parens, dots and all). These patterns match
+    # Painter's actual export filenames so OCIO-aware consumers (Nuke,
+    # RV, non-pxrtexture nodes) resolve published .tex/.png correctly.
     rules.insertRule(0, "raw-suffix", raw, "*_Raw*", "*")
-    rules.insertRule(1, "linear-srgb-suffix", linear_srgb, "*_Linear-sRGB*", "*")
-    rules.insertRule(2, "srgb-texture-suffix", srgb_texture, "*_sRGB-Texture*", "*")
+    rules.insertRule(
+        1, "linear-rec709-suffix", linear_srgb, "*_Linear Rec.709 (sRGB)*", "*"
+    )
+    rules.insertRule(2, "srgb-texture-suffix", srgb_texture, "*_sRGB - Texture*", "*")
     rules.insertRule(3, "acescg-suffix", acescg, "*_ACEScg*", "*")
     rules.insertRule(4, "exr", acescg, "*", "exr")
     rules.insertRule(5, "png", srgb_texture, "*", "png")
@@ -182,10 +182,6 @@ def main() -> int:
 
     config = build_config(ocio, args.source)
     (output_dir / "config.ocio").write_text(config.serialize(), encoding="utf-8")
-    (output_dir / f"rman_color_config_{CONFIG_VERSION}.json").write_text(
-        json.dumps({"ocio_aliases": _RMAN_OCIO_ALIASES}, indent=2) + "\n",
-        encoding="utf-8",
-    )
     (output_dir / "README.md").write_text(
         _build_readme(args.source, Path(__file__).resolve()),
         encoding="utf-8",

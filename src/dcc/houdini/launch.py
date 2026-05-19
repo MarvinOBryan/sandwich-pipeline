@@ -97,10 +97,7 @@ class HoudiniLauncher(Launcher):
             "JOB": str(resolve_mapped_path(get_production_path())),
             # Ensure LD_LIBRARY_PATH is unset to allow nesting pipe instances
             "LD_LIBRARY_PATH": None,
-            # OCIO + RMAN_COLOR_CONFIG_DIR (RfH reads the latter for
-            # texture-conversion rules). Filename hygiene, active
-            # displays/views all come from the helper.
-            **ocio_env_vars(include_renderman=True),
+            **ocio_env_vars(),
             "PIPE_LOG_LEVEL": log.getEffectiveLevel(),
             "PIPE_TELEMETRY_SPOOL_DIR": str(get_shared_telemetry_spool_dir()),
             # Root for vendored Houdini packages (MOPS, LYNX, axiom, tlops, ae_SVG)

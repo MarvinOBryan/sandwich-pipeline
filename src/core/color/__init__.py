@@ -38,21 +38,13 @@ def config_path() -> Path:
     return config_dir() / "config.ocio"
 
 
-def ocio_env_vars(*, include_renderman: bool = False) -> dict[str, str]:
-    """OCIO-related env vars every DCC launcher should merge into its env.
-
-    `include_renderman=True` also sets `RMAN_COLOR_CONFIG_DIR`, which
-    RenderMan-for-Maya and RenderMan-for-Houdini read to locate the
-    `rman_color_config_<dirname>.json` file alongside the config.
-    """
-    base: dict[str, str] = {
+def ocio_env_vars() -> dict[str, str]:
+    """OCIO-related env vars every DCC launcher should merge into its env."""
+    return {
         "OCIO": str(config_path()),
         "OCIO_ACTIVE_DISPLAYS": DISPLAY,
         "OCIO_ACTIVE_VIEWS": ACTIVE_VIEWS,
     }
-    if include_renderman:
-        base["RMAN_COLOR_CONFIG_DIR"] = str(config_dir())
-    return base
 
 
 __all__ = [

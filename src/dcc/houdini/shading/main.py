@@ -7,10 +7,10 @@ from pathlib import Path
 from typing import Any, cast
 
 import hou
-from env_sg import DB_Config
 
 from core.shotgrid import Asset, ShotGrid
 from core.struct.material import MaterialInfo
+from env_sg import DB_Config
 
 from . import variants
 
@@ -860,9 +860,9 @@ class MatlibNodeBuilder:
         if not path:
             return
         self._set_parm_if_exists(node, "filename", path)
-        if is_color:
-            # OCIO alias from sandwich-v01 config (resolves to "sRGB - Texture")
-            self._set_parm_if_exists(node, "filename_colorspace", "srgb_texture")
+        # The shader is the single source of truth for the texture's colorspace
+        alias = "srgb_texture" if is_color else "raw"
+        self._set_parm_if_exists(node, "filename_colorspace", alias)
 
     @staticmethod
     def _set_parm_if_exists(node: hou.Node, parm_name: str, value) -> None:
