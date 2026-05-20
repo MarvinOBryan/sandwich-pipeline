@@ -4,7 +4,7 @@ import maya.cmds as cmds
 from core.util.paths import get_previs_path
 
 # Global variable to store the camera file path (cross-platform)
-cameraFilePath = str(get_previs_path() / "Rigs/boboShotCam_v01.mb")
+cameraFilePath = str(get_previs_path() / "rigs/skdShotCam_v01.mb")
 
 # Dictionary to track the last used shot number for each sequence
 sequence_shot_tracker = {"A": 0, "B": 0, "C": 0, "D": 0, "E": 0, "F": 0, "G": 0}

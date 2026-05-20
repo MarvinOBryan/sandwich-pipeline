@@ -1,10 +1,9 @@
 import os
 
 import maya.cmds as cmds
-from core.util.paths import get_groups_path
+from core.util.paths import get_previs_path
 
-# Corrected rig paths
-RIG_PATH = get_groups_path() / "previs/Rigs/boboShotCam_v01.mb"
+RIG_PATH = get_previs_path() / "rigs/skdShotCam_v01.mb"
 
 
 class ReferenceAndMatchRig:
