@@ -313,11 +313,15 @@ class MShotFileManager(FileManager):
         if mc.objExists(ON_OPEN_SCRIPT):
             return
 
-        classname = self.__class__.__name__
+        cls = self.__class__
+        # Import from the package that re-exports the class (one level up from
+        # the module). Lets subclasses in other packages reuse this without
+        # overriding `_post_open_file` just to swap the import line.
+        import_package = cls.__module__.rsplit(".", 1)[0]
         mc.scriptNode(
             beforeScript=(
-                f"from dcc.maya.shotfile import {classname};"
-                f"{classname}.{self.__class__.run_on_open.__name__}()"
+                f"from {import_package} import {cls.__name__};"
+                f"{cls.__name__}.{cls.run_on_open.__name__}()"
             ),
             name=ON_OPEN_SCRIPT,
             scriptType=1,
