@@ -15,6 +15,7 @@ log = logging.getLogger(__name__)
 
 FILEINFO_KEY = "previs_sequencer_state"
 SCHEMA_VERSION = 1
+DEFAULT_SHOT_DURATION = 72  # frames; 3 seconds @ 24fps
 
 
 def next_shot_id() -> str:
@@ -34,6 +35,7 @@ class PrevisShot:
     id: str
     primary: str = ""
     alternates: list[str] = field(default_factory=list)
+    duration_frames: int = DEFAULT_SHOT_DURATION
     shotgrid_code: str | None = None
     published_primary: str | None = None
     published_animation_hash: str | None = None
@@ -65,6 +67,7 @@ class PrevisState:
                 id=str(s.get("id") or next_shot_id()),
                 primary=str(s.get("primary") or ""),
                 alternates=list(s.get("alternates") or []),
+                duration_frames=int(s.get("duration_frames") or DEFAULT_SHOT_DURATION),
                 shotgrid_code=s.get("shotgrid_code"),
                 published_primary=s.get("published_primary"),
                 published_animation_hash=s.get("published_animation_hash"),
@@ -93,6 +96,7 @@ class PrevisState:
                     "id": s.id,
                     "primary": s.primary,
                     "alternates": list(s.alternates),
+                    "duration_frames": s.duration_frames,
                     "shotgrid_code": s.shotgrid_code,
                     "published_primary": s.published_primary,
                     "published_animation_hash": s.published_animation_hash,

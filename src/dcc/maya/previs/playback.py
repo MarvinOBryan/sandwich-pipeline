@@ -13,7 +13,6 @@ from .state import PrevisState, read_state
 log = logging.getLogger(__name__)
 
 FRAME_START = 1001
-DEFAULT_SHOT_LENGTH = 24  # frames; placeholder length for shots with no keys yet.
 
 _SCRIPT_JOB_ID: int | None = None
 
@@ -33,16 +32,12 @@ def remove_camera_callback() -> None:
 
 
 def compute_shot_ranges(state: PrevisState) -> dict[str, tuple[int, int]]:
-    """For each shot, derive `(start, end)` from its primary's keyframe span.
-
-    Shots stack in order starting at `FRAME_START`; an unkeyed primary falls
-    back to `DEFAULT_SHOT_LENGTH` so the timeline still places it somewhere.
-    """
+    """Stack shots in order starting at `FRAME_START`, sizing each by its
+    explicit `duration_frames` field."""
     ranges: dict[str, tuple[int, int]] = {}
     cursor = FRAME_START
     for shot in state.shots:
-        length = _primary_length(shot.primary)
-        end = cursor + max(length - 1, 0)
+        end = cursor + max(shot.duration_frames - 1, 0)
         ranges[shot.id] = (cursor, end)
         cursor = end + 1
     return ranges
@@ -58,16 +53,6 @@ def resolve_camera_for_frame(
         if start <= frame <= end:
             return shot.primary or None
     return None
-
-
-def _primary_length(namespace: str) -> int:
-    if not namespace or not mc.namespace(exists=f":{namespace}"):
-        return DEFAULT_SHOT_LENGTH
-    span = cameras.camera_animation_range(namespace)
-    if span is None:
-        return DEFAULT_SHOT_LENGTH
-    start, end = span
-    return int(end - start) + 1
 
 
 def _on_time_changed() -> None:

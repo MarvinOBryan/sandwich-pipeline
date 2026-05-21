@@ -1,0 +1,208 @@
+"""Design tokens + stylesheet snippets for the previs panel.
+
+Mirrors the dark palette in `design-brief-v1.html`. Centralized so a color
+tweak lands in one file instead of N stylesheets.
+"""
+
+from __future__ import annotations
+
+# --- panel chrome -----------------------------------------------------------
+
+PANEL_BG = "#2A2A2A"
+PANEL_BG_DEEP = "#1E1E1E"
+PANEL_BG_HEADER = "#303030"
+PANEL_BG_SOFT = "#353535"
+PANEL_TEXT = "#DAD5CB"
+PANEL_TEXT_DIM = "#8E867A"
+PANEL_BORDER = "#444444"
+PANEL_BORDER_SOFT = "#383838"
+
+# --- shot blocks ------------------------------------------------------------
+
+SHOT_ACTIVE = "#2D5566"
+SHOT_ACTIVE_EDGE = "#4A9DB8"
+SHOT_ACTIVE_TEXT = "#E8F4F8"
+SHOT_ALT = "#3A3A3A"
+SHOT_ALT_EDGE = "#555555"
+SHOT_ALT_TEXT = "#C8C0B0"
+SHOT_EMPTY_EDGE = "#4A4A4A"
+TRUNC_EDGE = "#C97D52"
+
+# --- code state dots --------------------------------------------------------
+
+CODE_EMPTY = "#6E665A"
+CODE_MODIFIED = "#E5B340"
+CODE_PUBLISHED = "#88AA70"
+
+# --- stylesheets ------------------------------------------------------------
+
+PANEL_ROOT = f"background: {PANEL_BG}; color: {PANEL_TEXT};"
+
+TOP_BAR = f"""
+QFrame#topBar {{
+    background: {PANEL_BG_DEEP};
+    border-bottom: 1px solid #000;
+}}
+QFrame#topBar QLabel#title {{
+    color: {PANEL_TEXT};
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 1px;
+}}
+QFrame#topBar QLabel#info {{
+    color: {PANEL_TEXT_DIM};
+    font-size: 11px;
+}}
+"""
+
+TOOLBAR_BUTTON = f"""
+QPushButton {{
+    background: {PANEL_BG};
+    color: {PANEL_TEXT};
+    border: 1px solid {PANEL_BORDER};
+    border-radius: 2px;
+    padding: 4px 12px;
+    font-size: 11px;
+    letter-spacing: 1px;
+}}
+QPushButton:hover {{ border-color: {SHOT_ACTIVE_EDGE}; color: {SHOT_ACTIVE_TEXT}; }}
+QPushButton:disabled {{ color: {PANEL_TEXT_DIM}; border-color: {PANEL_BORDER_SOFT}; }}
+"""
+
+TRACK_LABEL_PRIMARY = f"""
+QLabel {{
+    background: {PANEL_BG_DEEP};
+    color: {PANEL_TEXT};
+    border-right: 1px solid {PANEL_BORDER};
+    padding-left: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 2px;
+}}
+"""
+
+TRACK_LABEL_ALT = f"""
+QLabel {{
+    background: {PANEL_BG_DEEP};
+    color: transparent;
+    border-right: 1px solid {PANEL_BORDER};
+}}
+"""
+
+CAM_BLOCK_PRIMARY = f"""
+QFrame#camBlock {{
+    background-color: {SHOT_ACTIVE};
+    border-top: 1px solid {SHOT_ACTIVE_EDGE};
+    border-right: 1px solid {SHOT_ACTIVE_EDGE};
+    border-bottom: 1px solid {SHOT_ACTIVE_EDGE};
+    border-left: 3px solid {SHOT_ACTIVE_EDGE};
+    border-radius: 2px;
+}}
+QFrame#camBlock QLabel#name {{
+    color: {SHOT_ACTIVE_TEXT};
+    font-size: 12px;
+    font-weight: 500;
+    background: transparent;
+}}
+QFrame#camBlock QLabel#lengthBadge {{
+    background-color: rgba(0,0,0,0.35);
+    color: rgba(255,255,255,0.85);
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 2px;
+}}
+"""
+
+# Same as the primary style, but dashed border indicates an active drop target
+# while an alternate is being dragged onto it.
+CAM_BLOCK_PRIMARY_DROP = f"""
+QFrame#camBlock {{
+    background-color: {SHOT_ACTIVE};
+    border: 2px dashed {SHOT_ACTIVE_TEXT};
+    border-radius: 2px;
+}}
+QFrame#camBlock QLabel#name {{
+    color: {SHOT_ACTIVE_TEXT};
+    font-size: 12px;
+    font-weight: 500;
+    background: transparent;
+}}
+QFrame#camBlock QLabel#lengthBadge {{
+    background-color: rgba(0,0,0,0.35);
+    color: rgba(255,255,255,0.85);
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 2px;
+}}
+"""
+
+CAM_BLOCK_ALT = f"""
+QFrame#camBlock {{
+    background-color: {SHOT_ALT};
+    border: 1px solid {SHOT_ALT_EDGE};
+    border-radius: 2px;
+}}
+QFrame#camBlock QLabel#name {{
+    color: {SHOT_ALT_TEXT};
+    font-size: 12px;
+    background: transparent;
+}}
+QFrame#camBlock QLabel#lengthBadge {{
+    background-color: rgba(0,0,0,0.3);
+    color: rgba(255,255,255,0.7);
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 2px;
+}}
+"""
+
+ADD_ALT_CELL = f"""
+QPushButton#addAlt {{
+    background: transparent;
+    border: 1px dashed {SHOT_EMPTY_EDGE};
+    border-radius: 2px;
+    color: {PANEL_TEXT_DIM};
+    font-size: 11px;
+    font-style: italic;
+    padding: 4px 8px;
+    text-align: center;
+}}
+QPushButton#addAlt:hover {{
+    border-color: {SHOT_ACTIVE_EDGE};
+    color: {SHOT_ACTIVE_EDGE};
+}}
+QPushButton#addAlt:disabled {{
+    color: {PANEL_BORDER_SOFT};
+    border-color: {PANEL_BORDER_SOFT};
+}}
+"""
+
+# Resize handle stripes the right edge of a primary cam block. Always slightly
+# visible so artists can see "this is grabbable"; brighter on hover/drag.
+RESIZE_HANDLE_IDLE = """
+QFrame#resizeHandle {
+    background: rgba(74,157,184,0.20);
+    border-left: 1px solid rgba(74,157,184,0.30);
+}
+"""
+
+RESIZE_HANDLE_HOVER = f"""
+QFrame#resizeHandle {{
+    background: rgba(74,157,184,0.55);
+    border-left: 1px solid {SHOT_ACTIVE_EDGE};
+}}
+"""
+
+RESIZE_HANDLE_ACTIVE = f"""
+QFrame#resizeHandle {{
+    background: {SHOT_ACTIVE_EDGE};
+    border-left: 1px solid {SHOT_ACTIVE_TEXT};
+}}
+"""
+
+TOP_BAR_DOT = f"""
+QFrame#topBarDot {{
+    background: {SHOT_ACTIVE_EDGE};
+    border-radius: 4px;
+}}
+"""

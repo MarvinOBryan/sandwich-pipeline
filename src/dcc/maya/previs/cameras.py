@@ -70,15 +70,23 @@ def camera_shape_for_namespace(ns: str) -> str | None:
 
 
 def camera_animation_range(namespace: str) -> tuple[float, float] | None:
-    """First and last keyframe time of the rig's `main_CTRL`, or None when unkeyed."""
-    target = f"{namespace}:main_CTRL"
-    if not mc.objExists(target):
+    """Earliest and latest keyframe time across every rig control, or None when unkeyed.
+
+    Used at publish time to bake the camera's actual animation into USD —
+    the sequencer panel no longer reads this for layout (durations are stored
+    explicitly on `PrevisShot.duration_frames`).
+    """
+    all_times: list[float] = []
+    for control in RIG_CONTROLS:
+        plug = f"{namespace}:{control}"
+        if not mc.objExists(plug):
+            continue
+        raw = mc.keyframe(plug, query=True, timeChange=True) or []
+        if raw:
+            all_times.extend(cast(list[float], raw))
+    if not all_times:
         return None
-    raw = mc.keyframe(target, query=True, timeChange=True) or []
-    if not raw:
-        return None
-    times = cast(list[float], raw)
-    return (float(min(times)), float(max(times)))
+    return (float(min(all_times)), float(max(all_times)))
 
 
 def compute_animation_hash(camera_namespace: str) -> str:
