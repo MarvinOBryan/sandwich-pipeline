@@ -35,7 +35,7 @@ class PrevisShot:
     id: str
     primary: str = ""
     alternates: list[str] = field(default_factory=list)
-    duration_frames: int = DEFAULT_SHOT_DURATION
+    durations: dict[str, int] = field(default_factory=dict)
     shotgrid_code: str | None = None
     published_primary: str | None = None
     published_animation_hash: str | None = None
@@ -45,6 +45,13 @@ class PrevisShot:
         return (
             [self.primary, *self.alternates] if self.primary else list(self.alternates)
         )
+
+    def duration_of(self, namespace: str) -> int:
+        return self.durations.get(namespace, DEFAULT_SHOT_DURATION)
+
+    @property
+    def primary_duration(self) -> int:
+        return self.duration_of(self.primary)
 
 
 @dataclass
@@ -62,18 +69,7 @@ class PrevisState:
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> PrevisState:
         shots_raw = raw.get("shots") or []
-        shots = [
-            PrevisShot(
-                id=str(s.get("id") or next_shot_id()),
-                primary=str(s.get("primary") or ""),
-                alternates=list(s.get("alternates") or []),
-                duration_frames=int(s.get("duration_frames") or DEFAULT_SHOT_DURATION),
-                shotgrid_code=s.get("shotgrid_code"),
-                published_primary=s.get("published_primary"),
-                published_animation_hash=s.get("published_animation_hash"),
-            )
-            for s in shots_raw
-        ]
+        shots = [PrevisShot(**_load_shot_fields(s)) for s in shots_raw]
         metadata = raw.get("metadata") or {}
         return cls(
             schema_version=int(raw.get("schema_version") or SCHEMA_VERSION),
@@ -96,7 +92,7 @@ class PrevisState:
                     "id": s.id,
                     "primary": s.primary,
                     "alternates": list(s.alternates),
-                    "duration_frames": s.duration_frames,
+                    "durations": dict(s.durations),
                     "shotgrid_code": s.shotgrid_code,
                     "published_primary": s.published_primary,
                     "published_animation_hash": s.published_animation_hash,
@@ -107,6 +103,27 @@ class PrevisState:
 
     def find_shot(self, shot_id: str) -> PrevisShot | None:
         return next((s for s in self.shots if s.id == shot_id), None)
+
+
+def _load_shot_fields(s: dict[str, Any]) -> dict[str, Any]:
+    """Build PrevisShot kwargs from raw JSON, migrating the v1 `duration_frames` field."""
+    primary = str(s.get("primary") or "")
+    durations_raw = s.get("durations")
+    if isinstance(durations_raw, dict):
+        durations = {str(k): int(v) for k, v in durations_raw.items()}
+    else:
+        # v1 schema stored a single `duration_frames` on the shot (= primary's duration).
+        legacy = int(s.get("duration_frames") or DEFAULT_SHOT_DURATION)
+        durations = {primary: legacy} if primary else {}
+    return dict(
+        id=str(s.get("id") or next_shot_id()),
+        primary=primary,
+        alternates=list(s.get("alternates") or []),
+        durations=durations,
+        shotgrid_code=s.get("shotgrid_code"),
+        published_primary=s.get("published_primary"),
+        published_animation_hash=s.get("published_animation_hash"),
+    )
 
 
 def read_state() -> PrevisState | None:

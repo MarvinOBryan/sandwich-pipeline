@@ -74,7 +74,7 @@ def camera_animation_range(namespace: str) -> tuple[float, float] | None:
 
     Used at publish time to bake the camera's actual animation into USD —
     the sequencer panel no longer reads this for layout (durations are stored
-    explicitly on `PrevisShot.duration_frames`).
+    explicitly on `PrevisShot.durations`).
     """
     all_times: list[float] = []
     for control in RIG_CONTROLS:
@@ -153,3 +153,4 @@ def remove_camera_from_shot(shot: PrevisShot, namespace: str) -> None:
         shot.primary = ""
     if namespace in shot.alternates:
         shot.alternates.remove(namespace)
+    shot.durations.pop(namespace, None)

@@ -32,12 +32,11 @@ def remove_camera_callback() -> None:
 
 
 def compute_shot_ranges(state: PrevisState) -> dict[str, tuple[int, int]]:
-    """Stack shots in order starting at `FRAME_START`, sizing each by its
-    explicit `duration_frames` field."""
+    """Stack shots in order from `FRAME_START`, sizing each by its primary's duration."""
     ranges: dict[str, tuple[int, int]] = {}
     cursor = FRAME_START
     for shot in state.shots:
-        end = cursor + max(shot.duration_frames - 1, 0)
+        end = cursor + max(shot.primary_duration - 1, 0)
         ranges[shot.id] = (cursor, end)
         cursor = end + 1
     return ranges

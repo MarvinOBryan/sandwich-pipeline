@@ -19,6 +19,7 @@ from Qt.QtWidgets import (
     QLabel,
     QMenu,
     QSizePolicy,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -95,6 +96,7 @@ class CamBlock(QFrame):
         namespace: str,
         is_primary: bool,
         length_frames: int,
+        start_frame: int,
         shot_id: str,
         controller: PrevisPanel,
         height: int = BLOCK_HEIGHT,
@@ -106,13 +108,13 @@ class CamBlock(QFrame):
         self._namespace = namespace
         self._is_primary = is_primary
         self._length_frames = length_frames
+        self._start_frame = start_frame
         # Taken verbatim from the timeline so drag math stays stable —
         # deriving px-per-frame from self.width() drifts because the block is
         # being live-resized during the drag.
         self._px_per_frame = max(1, px_per_frame)
         self._shot_id = shot_id
         self._controller = controller
-        self._length_label: QLabel | None = None
         self._press_pos: QtCore.QPoint | None = None
 
         self.setFixedHeight(height)
@@ -126,42 +128,65 @@ class CamBlock(QFrame):
         else:
             self.setStyleSheet(style.CAM_BLOCK_ALT)
 
-        layout = QHBoxLayout(self)
+        outer = QHBoxLayout(self)
         # Right margin 0 on primary: the resize handle owns that strip.
         # Left margin reduced on primary: the thick border-left already eats ~2px.
-        layout.setContentsMargins(
-            8 if is_primary else 10, 0, 0 if is_primary else 10, 0
-        )
-        layout.setSpacing(6)
-
-        # Decorative labels — let presses fall through to the QFrame so the
-        # block's own mousePressEvent fires for click/drag handling.
-        name_label = QLabel(namespace, self)
-        name_label.setObjectName("name")
-        name_label.setAttribute(_TRANSPARENT_FOR_MOUSE, True)
-        layout.addWidget(name_label, 1)
-
-        length_label = QLabel(f"{length_frames}f", self)
-        length_label.setObjectName("lengthBadge")
-        length_label.setAttribute(_TRANSPARENT_FOR_MOUSE, True)
-        layout.addWidget(length_label)
-        self._length_label = length_label
-
+        outer.setContentsMargins(8 if is_primary else 10, 0, 0 if is_primary else 10, 0)
+        outer.setSpacing(0)
+        outer.addLayout(self._build_content(), 1)
         if is_primary:
-            layout.addWidget(_ResizeHandle(self, self))
+            outer.addWidget(_ResizeHandle(self, self))
+
+    def _build_content(self) -> QVBoxLayout:
+        col = QVBoxLayout()
+        col.setContentsMargins(0, 4, 0, 4)
+        col.setSpacing(2)
+
+        # Decorative labels — `WA_TransparentForMouseEvents` lets presses fall
+        # through to the QFrame so the block's own mousePressEvent fires.
+        name = QLabel(self._namespace, self)
+        name.setObjectName("name")
+        name.setAttribute(_TRANSPARENT_FOR_MOUSE, True)
+        col.addWidget(name)
+
+        col.addLayout(self._build_frame_row())
+        return col
+
+    def _build_frame_row(self) -> QHBoxLayout:
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(4)
+
+        self._start_label = _frame_label("startFrame", str(self._start_frame), self)
+        self._length_label = _frame_label(
+            "lengthBadge", f"{self._length_frames}f", self
+        )
+        self._end_label = _frame_label("endFrame", str(self._end_frame()), self)
+
+        row.addWidget(self._start_label)
+        row.addStretch(1)
+        row.addWidget(self._length_label)
+        row.addStretch(1)
+        row.addWidget(self._end_label)
+        return row
+
+    def _end_frame(self) -> int:
+        return self._start_frame + max(self._length_frames - 1, 0)
 
     # --- resize hooks (called by _ResizeHandle) -----------------------------
 
     def preview_resize(self, delta_px: int) -> None:
         new_length = self._compute_new_length(delta_px)
-        if self._length_label is not None:
-            self._length_label.setText(f"{new_length}f")
-        self._controller.preview_resize_shot(self._shot_id, new_length)
+        self._length_label.setText(f"{new_length}f")
+        self._end_label.setText(str(self._start_frame + max(new_length - 1, 0)))
+        self._controller.preview_resize_camera(
+            self._shot_id, self._namespace, new_length
+        )
 
     def commit_resize(self, delta_px: int) -> None:
         new_length = self._compute_new_length(delta_px)
         if new_length != self._length_frames:
-            self._controller.resize_shot(self._shot_id, new_length)
+            self._controller.resize_camera(self._shot_id, self._namespace, new_length)
 
     def _compute_new_length(self, delta_px: int) -> int:
         delta_frames = int(round(delta_px / self._px_per_frame))
@@ -265,3 +290,10 @@ class CamBlock(QFrame):
             lambda: self._controller.remove_camera(self._shot_id, self._namespace),
         )
         menu.exec_(event.globalPos())
+
+
+def _frame_label(object_name: str, text: str, parent: QWidget) -> QLabel:
+    label = QLabel(text, parent)
+    label.setObjectName(object_name)
+    label.setAttribute(_TRANSPARENT_FOR_MOUSE, True)
+    return label

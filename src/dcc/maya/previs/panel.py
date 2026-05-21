@@ -120,7 +120,7 @@ class PrevisPanel(MayaQWidgetDockableMixin, QWidget):  # type: ignore[misc]
         shots = self._state.shots
         if not shots:
             return f"{seq}  ·  no shots"
-        total_frames = sum(s.duration_frames for s in shots)
+        total_frames = sum(s.primary_duration for s in shots)
         plural = "s" if len(shots) != 1 else ""
         return (
             f"{seq}  ·  {len(shots)} shot{plural}"
@@ -146,7 +146,11 @@ class PrevisPanel(MayaQWidgetDockableMixin, QWidget):  # type: ignore[misc]
         if not self._guard_previs_file():
             return
         ns = cameras.add_new_rig_reference()
-        new_shot = PrevisShot(id=state.next_shot_id(), primary=ns)
+        new_shot = PrevisShot(
+            id=state.next_shot_id(),
+            primary=ns,
+            durations={ns: state.DEFAULT_SHOT_DURATION},
+        )
         self._state.shots.append(new_shot)
         self._persist()
 
@@ -160,6 +164,7 @@ class PrevisPanel(MayaQWidgetDockableMixin, QWidget):  # type: ignore[misc]
             return
         ns = cameras.add_new_rig_reference()
         shot.alternates.append(ns)
+        shot.durations[ns] = state.DEFAULT_SHOT_DURATION
         self._persist()
 
     def add_alternate_duplicate_primary(self, shot_id: str) -> None:
@@ -170,6 +175,8 @@ class PrevisPanel(MayaQWidgetDockableMixin, QWidget):  # type: ignore[misc]
         if new_ns is None:
             return
         shot.alternates.append(new_ns)
+        # Inherit the primary's duration — the duplicate IS the primary, at this moment.
+        shot.durations[new_ns] = shot.primary_duration
         self._persist()
 
     def add_alternate_existing_camera(self, shot_id: str) -> None:
@@ -181,6 +188,7 @@ class PrevisPanel(MayaQWidgetDockableMixin, QWidget):  # type: ignore[misc]
         if not chosen:
             return
         shot.alternates.append(chosen)
+        shot.durations[chosen] = state.DEFAULT_SHOT_DURATION
         self._persist()
 
     def promote_to_primary(self, shot_id: str, namespace: str) -> None:
@@ -195,18 +203,22 @@ class PrevisPanel(MayaQWidgetDockableMixin, QWidget):  # type: ignore[misc]
         shot.primary = namespace
         self._persist()
 
-    def resize_shot(self, shot_id: str, new_length_frames: int) -> None:
+    def resize_camera(
+        self, shot_id: str, namespace: str, new_length_frames: int
+    ) -> None:
         shot = self._state.find_shot(shot_id)
         if shot is None or new_length_frames <= 0:
             return
-        if shot.duration_frames == new_length_frames:
+        if shot.duration_of(namespace) == new_length_frames:
             return
-        shot.duration_frames = new_length_frames
+        shot.durations[namespace] = new_length_frames
         self._persist()
 
-    def preview_resize_shot(self, shot_id: str, new_length_frames: int) -> None:
+    def preview_resize_camera(
+        self, shot_id: str, namespace: str, new_length_frames: int
+    ) -> None:
         """Live column-width preview during a resize drag; no state mutation."""
-        self._timeline.preview_column_width(shot_id, new_length_frames)
+        self._timeline.preview_column_width(shot_id, namespace, new_length_frames)
 
     def remove_camera(self, shot_id: str, namespace: str) -> None:
         shot = self._state.find_shot(shot_id)
@@ -232,6 +244,8 @@ class PrevisPanel(MayaQWidgetDockableMixin, QWidget):  # type: ignore[misc]
         if shot.primary == namespace:
             shot.primary = new_name
         shot.alternates = [new_name if a == namespace else a for a in shot.alternates]
+        if namespace in shot.durations:
+            shot.durations[new_name] = shot.durations.pop(namespace)
         self._persist()
 
     def assign_code(self, shot_id: str) -> None:

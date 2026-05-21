@@ -89,6 +89,43 @@ QLabel {{
 }}
 """
 
+# Frame-info row shared by primary and alt blocks: monospace edge labels at
+# 55%/40% opacity, a slightly bolder pill in the middle for the duration.
+_FRAME_LABELS_PRIMARY = """
+QFrame#camBlock QLabel#startFrame,
+QFrame#camBlock QLabel#endFrame {
+    color: rgba(255,255,255,0.55);
+    font-size: 10px;
+    font-family: monospace;
+    background: transparent;
+}
+QFrame#camBlock QLabel#lengthBadge {
+    background-color: rgba(0,0,0,0.35);
+    color: rgba(255,255,255,0.9);
+    font-size: 10px;
+    font-weight: 500;
+    padding: 1px 6px;
+    border-radius: 2px;
+}
+"""
+
+_FRAME_LABELS_ALT = """
+QFrame#camBlock QLabel#startFrame,
+QFrame#camBlock QLabel#endFrame {
+    color: rgba(255,255,255,0.4);
+    font-size: 10px;
+    font-family: monospace;
+    background: transparent;
+}
+QFrame#camBlock QLabel#lengthBadge {
+    background-color: rgba(0,0,0,0.3);
+    color: rgba(255,255,255,0.75);
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 2px;
+}
+"""
+
 CAM_BLOCK_PRIMARY = f"""
 QFrame#camBlock {{
     background-color: {SHOT_ACTIVE};
@@ -104,13 +141,7 @@ QFrame#camBlock QLabel#name {{
     font-weight: 500;
     background: transparent;
 }}
-QFrame#camBlock QLabel#lengthBadge {{
-    background-color: rgba(0,0,0,0.35);
-    color: rgba(255,255,255,0.85);
-    font-size: 10px;
-    padding: 2px 6px;
-    border-radius: 2px;
-}}
+{_FRAME_LABELS_PRIMARY}
 """
 
 # Same as the primary style, but dashed border indicates an active drop target
@@ -127,13 +158,7 @@ QFrame#camBlock QLabel#name {{
     font-weight: 500;
     background: transparent;
 }}
-QFrame#camBlock QLabel#lengthBadge {{
-    background-color: rgba(0,0,0,0.35);
-    color: rgba(255,255,255,0.85);
-    font-size: 10px;
-    padding: 2px 6px;
-    border-radius: 2px;
-}}
+{_FRAME_LABELS_PRIMARY}
 """
 
 CAM_BLOCK_ALT = f"""
@@ -147,13 +172,7 @@ QFrame#camBlock QLabel#name {{
     font-size: 12px;
     background: transparent;
 }}
-QFrame#camBlock QLabel#lengthBadge {{
-    background-color: rgba(0,0,0,0.3);
-    color: rgba(255,255,255,0.7);
-    font-size: 10px;
-    padding: 2px 6px;
-    border-radius: 2px;
-}}
+{_FRAME_LABELS_ALT}
 """
 
 ADD_ALT_CELL = f"""

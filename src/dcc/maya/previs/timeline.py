@@ -113,14 +113,15 @@ class PrevisTimeline(QWidget):
             return
 
         shots = state.shots
-        shot_lengths = [s.duration_frames for s in shots]
+        column_lengths = [s.primary_duration for s in shots]
+        ranges = playback.compute_shot_ranges(state)
         first_frame = playback.FRAME_START
-        last_frame = first_frame + sum(shot_lengths) - 1
+        last_frame = first_frame + sum(column_lengths) - 1
 
-        self._apply_column_widths(shot_lengths)
+        self._apply_column_widths(column_lengths)
         self._add_ruler_row(first_frame, last_frame, num_shots=len(shots))
         self._add_header_row(shots)
-        deepest_row = self._add_track_rows(shots, shot_lengths)
+        deepest_row = self._add_track_rows(shots, ranges)
         self._apply_trailing_stretches(len(shots), deepest_row)
 
     # ----- private layout helpers -----------------------------------------
@@ -181,7 +182,11 @@ class PrevisTimeline(QWidget):
                 index + 1,
             )
 
-    def _add_track_rows(self, shots: list[PrevisShot], shot_lengths: list[int]) -> int:
+    def _add_track_rows(
+        self,
+        shots: list[PrevisShot],
+        ranges: dict[str, tuple[int, int]],
+    ) -> int:
         """Build the primary row, alt rows, and per-shot add-alt cell. Returns the deepest row index used."""
         max_alts = max((len(s.alternates) for s in shots), default=0)
 
@@ -189,9 +194,10 @@ class PrevisTimeline(QWidget):
         self._grid.addWidget(_track_label("Primary", is_primary=True), _ROW_PRIMARY, 0)
         self._grid.setRowMinimumHeight(_ROW_PRIMARY, self._row_height)
         for index, shot in enumerate(shots):
+            shot_start = ranges[shot.id][0]
             self._grid.addLayout(
                 self._cell_for_camera(
-                    shot, shot.primary, is_primary=True, shot_length=shot_lengths[index]
+                    shot, shot.primary, is_primary=True, shot_start=shot_start
                 ),
                 _ROW_PRIMARY,
                 index + 1,
@@ -210,7 +216,7 @@ class PrevisTimeline(QWidget):
                             shot,
                             namespace,
                             is_primary=False,
-                            shot_length=shot_lengths[index],
+                            shot_start=ranges[shot.id][0],
                         ),
                         grid_row,
                         index + 1,
@@ -236,7 +242,7 @@ class PrevisTimeline(QWidget):
         namespace: str,
         *,
         is_primary: bool,
-        shot_length: int,
+        shot_start: int,
     ) -> QHBoxLayout:
         cell = QHBoxLayout()
         cell.setContentsMargins(1, 4, 1, 4)
@@ -248,7 +254,8 @@ class PrevisTimeline(QWidget):
             CamBlock(
                 namespace=namespace,
                 is_primary=is_primary,
-                length_frames=shot_length,
+                length_frames=shot.duration_of(namespace),
+                start_frame=shot_start,
                 shot_id=shot.id,
                 controller=self._controller,
                 height=self._block_height(),
@@ -289,11 +296,13 @@ class PrevisTimeline(QWidget):
 
     # ----- live preview (driven by CamBlock during drag) -------------------
 
-    def preview_column_width(self, shot_id: str, new_length: int) -> None:
-        """Update one column's min width and reflow the ruler so the drag feels live.
+    def preview_column_width(
+        self, shot_id: str, namespace: str, new_length: int
+    ) -> None:
+        """Reflow column min-width + ruler ticks during a primary-block resize drag.
 
-        Without the ruler update, the ruler stretches its existing tick layout
-        to fit the new column width, which looks wrong until the rebuild fires.
+        Alt-block resizes don't drive column width (column is primary-keyed), so
+        we only reflow when the resized camera is its shot's primary.
         """
         if self._last_state is None:
             return
@@ -302,12 +311,15 @@ class PrevisTimeline(QWidget):
         )
         if index < 0:
             return
+        shot = self._last_state.shots[index]
+        if shot.primary != namespace:
+            return  # alt resize — column unchanged
         width = max(MIN_COLUMN_WIDTH, new_length * self._px_per_frame)
         self._grid.setColumnMinimumWidth(index + 1, width)
         if self._ruler is not None:
             total_frames = sum(
-                new_length if i == index else shot.duration_frames
-                for i, shot in enumerate(self._last_state.shots)
+                new_length if i == index else s.primary_duration
+                for i, s in enumerate(self._last_state.shots)
             )
             self._ruler.set_range(
                 playback.FRAME_START, playback.FRAME_START + total_frames - 1
