@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from Qt import QtCore, QtGui
 from Qt.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -39,6 +40,7 @@ class ShotHeader(QFrame):
         super().__init__(parent)
         self._shot = shot
         self._controller = controller
+        self._display_name = display_name
 
         self.setFixedHeight(HEADER_HEIGHT)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -52,31 +54,51 @@ class ShotHeader(QFrame):
         layout.setContentsMargins(10, 0, 4, 0)
         layout.setSpacing(6)
 
-        id_label = QLabel(display_name, self)
-        id_label.setStyleSheet(
+        self._id_label = QLabel(display_name, self)
+        self._id_label.setStyleSheet(
             f"color: {style.PANEL_TEXT}; font-size: 12px; "
             f"font-weight: 500; letter-spacing: 1px;"
         )
-        layout.addWidget(id_label, 1)
-        layout.addLayout(self._build_badge())
-        layout.addWidget(self._menu_button())
+        layout.addWidget(self._id_label, 1)
+        self._badge_dot, self._badge_label = self._build_badge_widgets()
+        layout.addWidget(self._badge_dot)
+        layout.addWidget(self._badge_label)
+        self._menu_btn = self._menu_button()
+        layout.addWidget(self._menu_btn)
 
-    def _build_badge(self) -> QHBoxLayout:
+        self.setToolTip(self._tooltip_text())
+
+    # Both hints return width=1 so the column shrinks to its setColumnMinimumWidth.
+    # See CamBlock.minimumSizeHint for the QGridLayout gotcha this avoids.
+    def minimumSizeHint(self) -> QtCore.QSize:
+        return QtCore.QSize(1, HEADER_HEIGHT)
+
+    def sizeHint(self) -> QtCore.QSize:
+        return QtCore.QSize(1, HEADER_HEIGHT)
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(event)
+        w = self.width()
+        full = w >= style.TIER_COMPACT
+        compact = w >= style.TIER_NARROW
+        self._id_label.setVisible(full)
+        self._badge_label.setVisible(full)
+        self._menu_btn.setVisible(compact)
+        # Dot is the load-bearing state signal — always show it.
+        self._badge_dot.setVisible(True)
+
+    def _build_badge_widgets(self) -> tuple[QFrame, QLabel]:
         text, dot_qss, text_qss = self._badge_style()
-
-        layout = QHBoxLayout()
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(5)
-
         dot = QFrame(self)
         dot.setFixedSize(8, 8)
         dot.setStyleSheet(f"QFrame {{ {dot_qss} }}")
-        layout.addWidget(dot)
-
         label = QLabel(text, self)
         label.setStyleSheet(text_qss)
-        layout.addWidget(label)
-        return layout
+        return dot, label
+
+    def _tooltip_text(self) -> str:
+        code = self._shot.shotgrid_code or "no code"
+        return f"{self._display_name}\n{code}"
 
     def _badge_style(self) -> tuple[str, str, str]:
         """`(text, dot_qss, text_qss)` for the current shot state."""

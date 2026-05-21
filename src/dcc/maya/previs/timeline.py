@@ -7,20 +7,20 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from Qt import QtCore, QtGui
+from Qt import QtGui
 from Qt.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QLabel,
     QLayout,
-    QPushButton,
     QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
-from . import dialogs, playback, style
+from . import _qt, dialogs, playback, style
+from .add_alt_button import AddAltButton
 from .cam_block import BLOCK_HEIGHT, CamBlock
 from .ruler import RULER_HEIGHT, Ruler
 from .shot_header import HEADER_HEIGHT, ShotHeader
@@ -29,13 +29,6 @@ from .state import PrevisShot, PrevisState, display_name
 if TYPE_CHECKING:
     from .panel import PrevisPanel
 
-# Qt.py shim doesn't expose enum members through stubs; alias once.
-_ALIGN_CENTER = QtCore.Qt.AlignCenter  # type: ignore[attr-defined]
-_CONTROL = QtCore.Qt.ControlModifier  # type: ignore[attr-defined]
-_SHIFT = QtCore.Qt.ShiftModifier  # type: ignore[attr-defined]
-_POINTING_HAND = QtCore.Qt.PointingHandCursor  # type: ignore[attr-defined]
-_SCROLL_AS_NEEDED = QtCore.Qt.ScrollBarAsNeeded  # type: ignore[attr-defined]
-
 TRACK_LABEL_WIDTH = 76
 ROW_HEIGHT_DEFAULT = 44
 ROW_HEIGHT_MIN = 32
@@ -43,7 +36,8 @@ ROW_HEIGHT_MAX = 96
 PX_PER_FRAME_DEFAULT = 4
 PX_PER_FRAME_MIN = 2
 PX_PER_FRAME_MAX = 16
-MIN_COLUMN_WIDTH = 90
+# Minimum visual width for any column or alt block
+MIN_WIDTH_PX = 4
 
 _ROW_RULER = 0
 _ROW_HEADERS = 1
@@ -67,8 +61,8 @@ class PrevisTimeline(QWidget):
         self._scroll = QScrollArea(self)
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.NoFrame)
-        self._scroll.setHorizontalScrollBarPolicy(_SCROLL_AS_NEEDED)
-        self._scroll.setVerticalScrollBarPolicy(_SCROLL_AS_NEEDED)
+        self._scroll.setHorizontalScrollBarPolicy(_qt.SCROLL_AS_NEEDED)
+        self._scroll.setVerticalScrollBarPolicy(_qt.SCROLL_AS_NEEDED)
         self._scroll.setStyleSheet(
             f"QScrollArea {{ background: {style.PANEL_BG}; border: 0; }}"
         )
@@ -89,6 +83,9 @@ class PrevisTimeline(QWidget):
         self._prior_shot_count = 0
         self._prior_deepest_row = _ROW_PRIMARY
         self._ruler: Ruler | None = None  # held so resize previews can reflow ticks
+        # Alt blocks per shot, kept so a primary resize-drag can re-pin each
+        # alt's width and toggle truncated styling live without rebuilding.
+        self._alt_blocks_by_shot: dict[str, list[CamBlock]] = {}
 
         # Zoom state (Ctrl+wheel = vertical, Shift+wheel = horizontal).
         self._row_height = ROW_HEIGHT_DEFAULT
@@ -103,12 +100,13 @@ class PrevisTimeline(QWidget):
         self._last_state = state
         self._clear()
         self._reset_layout_overrides()
+        self._alt_blocks_by_shot = {}
         if not state.shots:
             empty = QLabel("No shots yet.  Click  + shot  to create one.", self._inner)
             empty.setStyleSheet(
                 f"color: {style.PANEL_TEXT_DIM}; padding: 40px; font-size: 12px;"
             )
-            empty.setAlignment(_ALIGN_CENTER)
+            empty.setAlignment(_qt.ALIGN_CENTER)
             self._grid.addWidget(empty, 0, 0, 1, 2)
             return
 
@@ -135,7 +133,7 @@ class PrevisTimeline(QWidget):
 
     def _apply_column_widths(self, shot_lengths: list[int]) -> None:
         for index, length in enumerate(shot_lengths):
-            width = max(MIN_COLUMN_WIDTH, length * self._px_per_frame)
+            width = max(MIN_WIDTH_PX, length * self._px_per_frame)
             self._grid.setColumnMinimumWidth(index + 1, width)
 
     def _apply_trailing_stretches(self, num_shots: int, deepest_row: int) -> None:
@@ -250,32 +248,55 @@ class PrevisTimeline(QWidget):
         if not namespace:
             cell.addStretch(1)
             return cell
-        cell.addWidget(
-            CamBlock(
-                namespace=namespace,
-                is_primary=is_primary,
-                length_frames=shot.duration_of(namespace),
-                start_frame=shot_start,
-                shot_id=shot.id,
-                controller=self._controller,
-                height=self._block_height(),
-                px_per_frame=self._px_per_frame,
-                parent=self._inner,
-            ),
-            1,
+
+        cam_length = shot.duration_of(namespace)
+        primary_length = max(shot.primary_duration, 1)
+        block = CamBlock(
+            namespace=namespace,
+            is_primary=is_primary,
+            length_frames=cam_length,
+            start_frame=shot_start,
+            shot_id=shot.id,
+            controller=self._controller,
+            height=self._block_height(),
+            px_per_frame=self._px_per_frame,
+            truncated=(not is_primary) and cam_length > primary_length,
+            parent=self._inner,
         )
+
+        if is_primary:
+            # Primary grows with its column (stretch=1, no width pin).
+            cell.addWidget(block, 1)
+            return cell
+
+        # Alts always pin a fixed width + trailing stretch — uniform structure
+        # so `preview_column_width` can re-pin live during a primary drag.
+        block.setFixedWidth(self._alt_visual_width(primary_length, cam_length))
+        cell.addWidget(block, 0)
+        cell.addStretch(1)
+        self._alt_blocks_by_shot.setdefault(shot.id, []).append(block)
         return cell
+
+    def _alt_visual_width(self, primary_length: int, cam_length: int) -> int:
+        """Pixel width for an alt block sharing a column sized to `primary_length`.
+
+        Shorter alts shrink to their share of the column; exact and truncated
+        alts fill the column edge-to-edge.
+        """
+        column_w = max(MIN_WIDTH_PX, primary_length * self._px_per_frame)
+        if cam_length >= primary_length:
+            return column_w
+        return max(MIN_WIDTH_PX, round(column_w * cam_length / primary_length))
 
     def _add_alt_cell(self, shot_id: str, *, enabled: bool) -> QHBoxLayout:
         cell = QHBoxLayout()
         cell.setContentsMargins(1, 4, 1, 4)
         cell.setSpacing(0)
-        button = QPushButton("+  add alternate", self._inner)
-        button.setObjectName("addAlt")
+        button = AddAltButton(self._inner)
         button.setEnabled(enabled)
         button.setStyleSheet(style.ADD_ALT_CELL)
         button.setFixedHeight(self._block_height())
-        button.setCursor(_POINTING_HAND)
+        button.setCursor(_qt.POINTING_HAND)
         button.clicked.connect(lambda: self._open_add_alt(shot_id))
         cell.addWidget(button)
         return cell
@@ -299,7 +320,7 @@ class PrevisTimeline(QWidget):
     def preview_column_width(
         self, shot_id: str, namespace: str, new_length: int
     ) -> None:
-        """Reflow column min-width + ruler ticks during a primary-block resize drag.
+        """Reflow column min-width, ruler ticks, and alt-block sizing during a primary drag.
 
         Alt-block resizes don't drive column width (column is primary-keyed), so
         we only reflow when the resized camera is its shot's primary.
@@ -314,8 +335,12 @@ class PrevisTimeline(QWidget):
         shot = self._last_state.shots[index]
         if shot.primary != namespace:
             return  # alt resize — column unchanged
-        width = max(MIN_COLUMN_WIDTH, new_length * self._px_per_frame)
+        width = max(MIN_WIDTH_PX, new_length * self._px_per_frame)
         self._grid.setColumnMinimumWidth(index + 1, width)
+        for alt_block in self._alt_blocks_by_shot.get(shot_id, []):
+            alt_length = alt_block.length_frames
+            alt_block.setFixedWidth(self._alt_visual_width(new_length, alt_length))
+            alt_block.set_truncated(alt_length > new_length)
         if self._ruler is not None:
             total_frames = sum(
                 new_length if i == index else s.primary_duration
@@ -330,8 +355,8 @@ class PrevisTimeline(QWidget):
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:
         mods = event.modifiers()
-        ctrl = bool(mods & _CONTROL)
-        shift = bool(mods & _SHIFT)
+        ctrl = bool(mods & _qt.CONTROL)
+        shift = bool(mods & _qt.SHIFT)
         if not (ctrl or shift):
             super().wheelEvent(event)
             return

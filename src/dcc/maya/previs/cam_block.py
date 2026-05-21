@@ -1,5 +1,6 @@
 """Single camera block. Drag an alternate onto its column's primary to promote;
-right-click for menu; drag the right-edge handle on primaries to resize the shot.
+double-click an alt for the same; right-click for menu; drag the right-edge
+handle on primaries to resize the shot.
 
 The resize handle is a dedicated child widget rather than edge-detection inside
 the QFrame so mouse events land unambiguously.
@@ -23,21 +24,18 @@ from Qt.QtWidgets import (
     QWidget,
 )
 
-from . import style
+from . import _qt, style
 
 if TYPE_CHECKING:
     from .panel import PrevisPanel
 
-# Qt.py shim doesn't expose enum members through stubs; alias once.
-_LEFT_BUTTON = QtCore.Qt.LeftButton  # type: ignore[attr-defined]
-_SIZE_HOR = QtCore.Qt.SizeHorCursor  # type: ignore[attr-defined]
-_TRANSPARENT_FOR_MOUSE = QtCore.Qt.WA_TransparentForMouseEvents  # type: ignore[attr-defined]
-_STYLED_BACKGROUND = QtCore.Qt.WA_StyledBackground  # type: ignore[attr-defined]
-_MOVE_ACTION = QtCore.Qt.MoveAction  # type: ignore[attr-defined]
-
 BLOCK_HEIGHT = 32
 _HANDLE_WIDTH = 10
 _MIME_TYPE = "application/x-previs-camera"  # payload: f"{shot_id}|{namespace}"
+
+# Hide the resize handle below this width — there's no room to grab it anyway,
+# and the handle's stripes would crowd out the colored sliver.
+_HANDLE_MIN_BLOCK_WIDTH = 28
 
 
 class _ResizeHandle(QFrame):
@@ -48,7 +46,7 @@ class _ResizeHandle(QFrame):
         self._block = block
         self.setObjectName("resizeHandle")
         self.setFixedWidth(_HANDLE_WIDTH)
-        self.setCursor(QCursor(_SIZE_HOR))
+        self.setCursor(QCursor(_qt.SIZE_HOR))
         self.setStyleSheet(style.RESIZE_HANDLE_IDLE)
         self._drag_active = False
         self._drag_start_global_x = 0
@@ -64,7 +62,7 @@ class _ResizeHandle(QFrame):
         super().leaveEvent(event)
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
-        if event.button() != _LEFT_BUTTON:
+        if event.button() != _qt.LEFT_BUTTON:
             super().mousePressEvent(event)
             return
         self._drag_active = True
@@ -101,6 +99,7 @@ class CamBlock(QFrame):
         controller: PrevisPanel,
         height: int = BLOCK_HEIGHT,
         px_per_frame: int = 4,
+        truncated: bool = False,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -109,22 +108,27 @@ class CamBlock(QFrame):
         self._is_primary = is_primary
         self._length_frames = length_frames
         self._start_frame = start_frame
+        self._truncated = truncated
         # Taken verbatim from the timeline so drag math stays stable —
         # deriving px-per-frame from self.width() drifts because the block is
         # being live-resized during the drag.
         self._px_per_frame = max(1, px_per_frame)
         self._shot_id = shot_id
         self._controller = controller
+        self._height_hint = height  # used by minimumSizeHint before geometry resolves
+        self._handle: _ResizeHandle | None = None
         self._press_pos: QtCore.QPoint | None = None
 
         self.setFixedHeight(height)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         # Without WA_StyledBackground, Qt's native style ignores stylesheet
         # background-color and shows outline-only.
-        self.setAttribute(_STYLED_BACKGROUND, True)
+        self.setAttribute(_qt.STYLED_BACKGROUND, True)
         if is_primary:
             self.setStyleSheet(style.CAM_BLOCK_PRIMARY)
             self.setAcceptDrops(True)
+        elif truncated:
+            self.setStyleSheet(style.CAM_BLOCK_ALT_TRUNC)
         else:
             self.setStyleSheet(style.CAM_BLOCK_ALT)
 
@@ -135,7 +139,24 @@ class CamBlock(QFrame):
         outer.setSpacing(0)
         outer.addLayout(self._build_content(), 1)
         if is_primary:
-            outer.addWidget(_ResizeHandle(self, self))
+            self._handle = _ResizeHandle(self, self)
+            outer.addWidget(self._handle)
+
+        self.setToolTip(self._tooltip_text())
+
+    def minimumSizeHint(self) -> QtCore.QSize:
+        # Both hints must override the default that cascades from child label
+        # widths — QGridLayout columns with stretch=0 honor sizeHint (not just
+        # min) when excess space is available, so a 200px sizeHint would still
+        # inflate the column even with minimumSizeHint at 1.
+        return QtCore.QSize(1, self._height_hint)
+
+    def sizeHint(self) -> QtCore.QSize:
+        return QtCore.QSize(1, self._height_hint)
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._apply_tier()
 
     def _build_content(self) -> QVBoxLayout:
         col = QVBoxLayout()
@@ -144,10 +165,10 @@ class CamBlock(QFrame):
 
         # Decorative labels — `WA_TransparentForMouseEvents` lets presses fall
         # through to the QFrame so the block's own mousePressEvent fires.
-        name = QLabel(self._namespace, self)
-        name.setObjectName("name")
-        name.setAttribute(_TRANSPARENT_FOR_MOUSE, True)
-        col.addWidget(name)
+        self._name_label = QLabel(self._namespace, self)
+        self._name_label.setObjectName("name")
+        self._name_label.setAttribute(_qt.TRANSPARENT_FOR_MOUSE, True)
+        col.addWidget(self._name_label)
 
         col.addLayout(self._build_frame_row())
         return col
@@ -161,7 +182,7 @@ class CamBlock(QFrame):
         self._length_label = _frame_label(
             "lengthBadge", f"{self._length_frames}f", self
         )
-        self._end_label = _frame_label("endFrame", str(self._end_frame()), self)
+        self._end_label = _frame_label("endFrame", self._end_label_text(), self)
 
         row.addWidget(self._start_label)
         row.addStretch(1)
@@ -173,12 +194,77 @@ class CamBlock(QFrame):
     def _end_frame(self) -> int:
         return self._start_frame + max(self._length_frames - 1, 0)
 
+    def _end_label_text(self) -> str:
+        text = str(self._end_frame())
+        return f"{text} ›››" if self._truncated else text
+
+    def _tooltip_text(self) -> str:
+        suffix = "  (longer than primary)" if self._truncated else ""
+        return (
+            f"{self._namespace}\n"
+            f"{self._start_frame} → {self._end_frame()}  ({self._length_frames}f)"
+            f"{suffix}"
+        )
+
+    @property
+    def length_frames(self) -> int:
+        return self._length_frames
+
+    def set_truncated(self, truncated: bool) -> None:
+        """Swap alt-block stylesheet + end-label chevron when the truncated state flips."""
+        if truncated == self._truncated:
+            return
+        self._truncated = truncated
+        self.setStyleSheet(
+            style.CAM_BLOCK_ALT_TRUNC if truncated else style.CAM_BLOCK_ALT
+        )
+        self._end_label.setText(self._end_label_text())
+        self.setToolTip(self._tooltip_text())
+
+    # --- tier-based progressive disclosure ---------------------------------
+
+    def _apply_tier(self) -> None:
+        """Show/hide labels and the resize handle based on current width.
+
+        - ≥ COMPACT: full layout, name elided to fit.
+        - NARROW–COMPACT: only the centered duration pill.
+        - < NARROW: just a colored sliver; hover tooltip carries the info.
+        """
+        w = self.width()
+        if self._handle is not None:
+            self._handle.setVisible(w >= _HANDLE_MIN_BLOCK_WIDTH)
+        full = w >= style.TIER_COMPACT
+        compact = w >= style.TIER_NARROW
+        self._name_label.setVisible(full)
+        self._start_label.setVisible(full)
+        self._end_label.setVisible(full)
+        self._length_label.setVisible(compact)
+        if full:
+            self._elide_name()
+
+    def _elide_name(self) -> None:
+        outer_left = 8 if self._is_primary else 10
+        outer_right = 0 if self._is_primary else 10
+        handle_w = _HANDLE_WIDTH if (self._handle and self._handle.isVisible()) else 0
+        available = self.width() - outer_left - outer_right - handle_w
+        if available <= 0:
+            return
+        fm = self._name_label.fontMetrics()
+        self._name_label.setText(
+            fm.elidedText(self._namespace, _qt.ELIDE_RIGHT, available)
+        )
+
     # --- resize hooks (called by _ResizeHandle) -----------------------------
 
     def preview_resize(self, delta_px: int) -> None:
         new_length = self._compute_new_length(delta_px)
         self._length_label.setText(f"{new_length}f")
-        self._end_label.setText(str(self._start_frame + max(new_length - 1, 0)))
+        end = self._start_frame + max(new_length - 1, 0)
+        self._end_label.setText(f"{end} ›››" if self._truncated else str(end))
+        # Tooltip carries the in-flight numbers so a paused drag still reads true.
+        self.setToolTip(
+            f"{self._namespace}\n{self._start_frame} → {end}  ({new_length}f)"
+        )
         self._controller.preview_resize_camera(
             self._shot_id, self._namespace, new_length
         )
@@ -195,7 +281,7 @@ class CamBlock(QFrame):
     # --- drag source (alts only) --------------------------------------------
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
-        if event.button() == _LEFT_BUTTON and not self._is_primary:
+        if event.button() == _qt.LEFT_BUTTON and not self._is_primary:
             self._press_pos = event.pos()
             event.accept()
             return
@@ -205,7 +291,7 @@ class CamBlock(QFrame):
         if (
             self._press_pos is not None
             and not self._is_primary
-            and event.buttons() & _LEFT_BUTTON
+            and event.buttons() & _qt.LEFT_BUTTON
         ):
             travel = (event.pos() - self._press_pos).manhattanLength()
             if travel >= QApplication.startDragDistance():
@@ -218,6 +304,13 @@ class CamBlock(QFrame):
         self._press_pos = None
         super().mouseReleaseEvent(event)
 
+    def mouseDoubleClickEvent(self, event: QtGui.QMouseEvent) -> None:
+        if event.button() == _qt.LEFT_BUTTON and not self._is_primary:
+            self._controller.promote_to_primary(self._shot_id, self._namespace)
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
     def _start_drag(self) -> None:
         drag = QDrag(self)
         mime = QMimeData()
@@ -226,7 +319,7 @@ class CamBlock(QFrame):
         pixmap = self.grab()
         drag.setPixmap(pixmap)
         drag.setHotSpot(QtCore.QPoint(pixmap.width() // 2, pixmap.height() // 2))
-        drag.exec_(_MOVE_ACTION)
+        drag.exec_(_qt.MOVE_ACTION)
 
     # --- drop target (primaries only) ---------------------------------------
 
@@ -295,5 +388,5 @@ class CamBlock(QFrame):
 def _frame_label(object_name: str, text: str, parent: QWidget) -> QLabel:
     label = QLabel(text, parent)
     label.setObjectName(object_name)
-    label.setAttribute(_TRANSPARENT_FOR_MOUSE, True)
+    label.setAttribute(_qt.TRANSPARENT_FOR_MOUSE, True)
     return label

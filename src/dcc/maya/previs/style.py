@@ -27,12 +27,16 @@ SHOT_ALT_EDGE = "#555555"
 SHOT_ALT_TEXT = "#C8C0B0"
 SHOT_EMPTY_EDGE = "#4A4A4A"
 TRUNC_EDGE = "#C97D52"
+TRUNC_TEXT = "#F4D4BE"
 
 # --- code state dots --------------------------------------------------------
 
 CODE_EMPTY = "#6E665A"
 CODE_MODIFIED = "#E5B340"
 CODE_PUBLISHED = "#88AA70"
+
+TIER_NARROW = 40  # below: only the colored sliver; tooltip carries the info
+TIER_COMPACT = 110  # below: drop name + start/end labels, keep the length pill
 
 # --- stylesheets ------------------------------------------------------------
 
@@ -173,6 +177,51 @@ QFrame#camBlock QLabel#name {{
     background: transparent;
 }}
 {_FRAME_LABELS_ALT}
+"""
+
+# Alt block whose intrinsic length is longer than the shot's primary — the
+# block fills the column visually but the orange right-edge gradient + thick
+# burnt border + chevron in the end label all say "extends past this slot."
+CAM_BLOCK_ALT_TRUNC = f"""
+QFrame#camBlock {{
+    background: qlineargradient(
+        x1:0, y1:0, x2:1, y2:0,
+        stop:0 {SHOT_ALT},
+        stop:0.7 {SHOT_ALT},
+        stop:0.95 rgba(201, 125, 82, 0.35),
+        stop:1 rgba(201, 125, 82, 0.5)
+    );
+    border-top: 1px solid {SHOT_ALT_EDGE};
+    border-bottom: 1px solid {SHOT_ALT_EDGE};
+    border-left: 1px solid {SHOT_ALT_EDGE};
+    border-right: 2px solid {TRUNC_EDGE};
+    border-radius: 2px;
+}}
+QFrame#camBlock QLabel#name {{
+    color: {SHOT_ALT_TEXT};
+    font-size: 12px;
+    background: transparent;
+}}
+QFrame#camBlock QLabel#startFrame {{
+    color: rgba(255,255,255,0.4);
+    font-size: 10px;
+    font-family: monospace;
+    background: transparent;
+}}
+QFrame#camBlock QLabel#endFrame {{
+    color: {TRUNC_TEXT};
+    font-size: 10px;
+    font-weight: 600;
+    font-family: monospace;
+    background: transparent;
+}}
+QFrame#camBlock QLabel#lengthBadge {{
+    background-color: rgba(201, 125, 82, 0.25);
+    color: {TRUNC_TEXT};
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 2px;
+}}
 """
 
 ADD_ALT_CELL = f"""
