@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import logging
 import uuid
@@ -133,12 +135,50 @@ def read_state() -> PrevisState | None:
     raw = info[0] if isinstance(info, (list, tuple)) else info
     if not isinstance(raw, str):
         return None
+    json_text = _decode_payload(raw)
+    if json_text is None:
+        log.warning("Previs sequencer state in fileInfo is malformed; ignoring.")
+        return None
     try:
-        return PrevisState.from_dict(json.loads(raw))
+        return PrevisState.from_dict(json.loads(json_text))
     except (json.JSONDecodeError, KeyError, ValueError):
         log.warning("Previs sequencer state in fileInfo is malformed; ignoring.")
         return None
 
 
 def write_state(state: PrevisState) -> None:
-    mc.fileInfo(FILEINFO_KEY, json.dumps(state.to_dict()))
+    # Base64-wrap so the stored string contains only `[A-Za-z0-9+/=]`. Maya's
+    # `fileInfo` round-trips raw JSON with backslash-escaped quotes (`\"`),
+    # which then fails to parse. Base64 has none of the characters Maya
+    # touches, so the value comes back exactly as written.
+    payload = base64.b64encode(json.dumps(state.to_dict()).encode("utf-8")).decode(
+        "ascii"
+    )
+    mc.fileInfo(FILEINFO_KEY, payload)
+
+
+def _decode_payload(raw: str) -> str | None:
+    """Return the JSON text from a stored `fileInfo` value.
+
+    Handles three shapes seen in the wild:
+    * **Base64** — the canonical form written by `write_state` post-fix.
+    * **MEL-escaped JSON** — legacy form where Maya stored `\\"` instead of
+      `"`. Recovered by unescaping the quotes.
+    * **Bare JSON** — earliest legacy form (no escapes). Returned unchanged.
+    """
+    # Base64 first: cheap to attempt and unambiguous when it succeeds.
+    try:
+        decoded_bytes = base64.b64decode(raw.encode("ascii"), validate=True)
+        decoded = decoded_bytes.decode("utf-8")
+        if decoded.lstrip().startswith("{"):
+            return decoded
+    except (binascii.Error, UnicodeDecodeError, ValueError):
+        pass
+
+    stripped = raw.lstrip()
+    if stripped.startswith('{\\"'):
+        # MEL-escaped: every `"` was stored as `\"`. Reverse it.
+        return raw.replace('\\"', '"')
+    if stripped.startswith("{"):
+        return raw
+    return None

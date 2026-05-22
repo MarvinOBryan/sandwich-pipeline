@@ -1,5 +1,5 @@
 from dcc.maya.playblast.shot.anim import AnimPlayblastDialog as AnimPlayblastDialog
-from dcc.maya.playblast.shot.previs import (
+from dcc.maya.playblast.previs.dialog import (
     PrevisPlayblastDialog as PrevisPlayblastDialog,
 )
 from dcc.maya.playblast.turnaround.dialog import (

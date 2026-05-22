@@ -69,6 +69,30 @@ def camera_shape_for_namespace(ns: str) -> str | None:
     return shapes[0] if shapes else None
 
 
+def resolve_camera_node(namespace: str) -> str:
+    """Return the camera shape node path under `namespace`, raising if absent.
+
+    Used at playblast time: `mayacapture.capture(camera=...)` calls
+    `mc.objExists` on the value, which fails for namespace strings — the
+    namespace is a container, not a node. Shape paths (`<ns>:<camera_shape>`)
+    are what Maya's lookup actually accepts.
+    """
+    shape = camera_shape_for_namespace(namespace)
+    if not shape:
+        raise RuntimeError(f"No camera shape found under namespace ':{namespace}'.")
+    return shape
+
+
+def focal_length(namespace: str) -> float | None:
+    """Return the focal length (mm) of the camera shape under `namespace`,
+    or `None` if the namespace has no camera shape or the query fails."""
+    try:
+        shape = resolve_camera_node(namespace)
+        return float(cast(float, mc.camera(shape, query=True, focalLength=True)))
+    except Exception:
+        return None
+
+
 def camera_animation_range(namespace: str) -> tuple[float, float] | None:
     """Earliest and latest keyframe time across every rig control, or None when unkeyed.
 
@@ -128,12 +152,17 @@ def find_scene_cameras_outside_state(state: PrevisState) -> list[str]:
     return sorted(candidates)
 
 
+def is_live(namespace: str) -> bool:
+    """True if `namespace` currently exists in the scene (i.e. not orphaned)."""
+    return bool(namespace) and bool(mc.namespace(exists=f":{namespace}"))
+
+
 def find_orphan_cameras(state: PrevisState) -> list[tuple[str, str]]:
     """`(shot_id, namespace)` for every camera in `state` whose namespace is gone from the scene."""
     orphans: list[tuple[str, str]] = []
     for shot in state.shots:
         for ns in shot.all_cameras:
-            if not mc.namespace(exists=f":{ns}"):
+            if not is_live(ns):
                 orphans.append((shot.id, ns))
     return orphans
 

@@ -6,15 +6,18 @@ import logging
 from pathlib import Path
 
 import maya.cmds as mc
+from env_sg import DB_Config
 
-from core.shotgrid import Shot, ShotGrid
+from core.shotgrid import Shot, ShotGrid, ShotGridError
+from core.ui import MessageDialog
 from core.util.paths import get_production_path
 from core.util.time_samples import offset_layer
 
 from dcc.maya.publish.usdchaser import ExportChaser, ExportChaserMode
+from dcc.maya.runtime import get_main_qt_window
 from dcc.maya.util.selection import maintain_selection
 
-from . import cameras
+from . import cameras, state
 from .state import PrevisShot, PrevisState, utcnow_iso
 
 log = logging.getLogger(__name__)
@@ -76,3 +79,57 @@ def publish_sequence(state: PrevisState, conn: ShotGrid) -> list[Path]:
     if paths:
         state.last_published_at = utcnow_iso()
     return paths
+
+
+def publish_sequence_interactive() -> None:
+    """Shelf-button entry: read state, connect to ShotGrid, publish, report.
+
+    Wraps `publish_sequence` so the artist gets file-not-previs and ShotGrid-
+    connection failures as readable dialogs instead of console tracebacks.
+    """
+    parent = get_main_qt_window()
+    current_state = state.read_state()
+    if current_state is None:
+        MessageDialog(
+            parent,
+            "Not in a previs file. Open a previs file before publishing the sequence.",
+            "Publish Sequence",
+        ).exec_()
+        return
+
+    try:
+        conn = ShotGrid.connect(DB_Config)
+    except ShotGridError as exc:
+        log.exception("Could not connect to ShotGrid for previs publish.")
+        MessageDialog(
+            parent,
+            f"Could not connect to ShotGrid.\n\n{exc}",
+            "Publish Sequence",
+        ).exec_()
+        return
+
+    try:
+        paths = publish_sequence(current_state, conn)
+    except Exception as exc:
+        log.exception("Previs sequence publish failed.")
+        MessageDialog(
+            parent,
+            f"Publish failed.\n\n{exc}",
+            "Publish Sequence",
+        ).exec_()
+        return
+
+    # Persist the updated `last_published_at` + per-shot publish hashes.
+    state.write_state(current_state)
+
+    if not paths:
+        MessageDialog(
+            parent,
+            "No shots were published. Assign ShotGrid codes to shots first.",
+            "Publish Sequence",
+        ).exec_()
+        return
+
+    lines = [f"Published {len(paths)} shot{'s' if len(paths) != 1 else ''}:", ""]
+    lines.extend(str(p) for p in paths)
+    MessageDialog(parent, "\n".join(lines), "Publish Sequence").exec_()
