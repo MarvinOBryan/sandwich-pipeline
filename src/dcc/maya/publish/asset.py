@@ -11,6 +11,16 @@ from pathlib import Path
 from typing import Any, Sequence, cast
 
 import maya.cmds as mc
+from core import telemetry
+from core.asset import AssetPaths, asset_owner_for, maya_model_stream, paths_for_asset
+from core.shotgrid import Asset, SGEntity, ShotGrid, ShotGridError
+from core.ui import (
+    FilteredListDialog,
+    MessageDialog,
+    MessageDialogCustomButtons,
+)
+from core.ui.progress import progress_scope
+from core.versioning import BackupResult, backup_if_changed
 from env import Executables
 from Qt.QtCore import QRegExp
 from Qt.QtGui import QRegExpValidator, QTextCursor
@@ -25,24 +35,14 @@ from Qt.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from dcc.houdini.launch import HoudiniLauncher
 
-from core import telemetry
-from core.asset import AssetPaths, asset_owner_for, maya_model_stream, paths_for_asset
-from core.ui import (
-    FilteredListDialog,
-    MessageDialog,
-    MessageDialogCustomButtons,
-)
-from core.ui.progress import progress_scope
+from dcc.houdini.launch import HoudiniLauncher
 from dcc.maya.assetfile import (
     read_asset_metadata,
     resolve_asset_from_scene_path,
     write_asset_metadata,
 )
 from dcc.maya.util.selection import maintain_selection
-from core.shotgrid import Asset, SGEntity, ShotGrid, ShotGridError
-from core.versioning import BackupResult, backup_if_changed
 
 from .publisher import PublishCopyError, Publisher, USDExportError
 
@@ -1088,7 +1088,9 @@ class AssetPublisher(Publisher):
                 node, shapes=True, fullPath=True
             )
             if shapes:
-                shading_groups.update(mc.listConnections(shapes, type="shadingEngine"))  # type: ignore
+                shading_groups.update(
+                    mc.listConnections(shapes, type="shadingEngine") or []  # type: ignore
+                )
         failures: dict[str, list[str]] = {}
         for shading_group in shading_groups:
             shaders: list[str] = mc.listConnections(
