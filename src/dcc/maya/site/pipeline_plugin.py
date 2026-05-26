@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import logging
 
-from maya import cmds
-from maya.api.OpenMaya import MObject
 from dcc.maya.command import (
     add_named_command,
     get_decorated_commands,
     register_command_from_description,
 )
+from maya import cmds
+from maya.api.OpenMaya import MObject
 
-log = logging.getLogger("dcc.maya.plugin")
+log = logging.getLogger("dcc.maya.pipeline_plugin")
 
 PLUGIN_DISPLAY_NAME = "Sandwich Pipeline"
 COMMAND_PREFIX = "SKD_"
