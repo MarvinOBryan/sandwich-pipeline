@@ -22,8 +22,9 @@ from .state import PrevisState
 log = logging.getLogger(__name__)
 
 # One Maya file per sequence, anchored to a ShotGrid Shot whose code matches
-# this regex (e.g. `A_previs`). Real shots use `<letter>_<number>` codes.
-SEQUENCE_PROXY_RE = re.compile(r"^[A-Z]_previs$")
+# this regex: `A_previs`, or `A_previs_2` for a split sequence. Real shots use
+# `<letter>_<number>` codes.
+SEQUENCE_PROXY_RE = re.compile(r"^[A-Z]_previs(?:_\d+)?$")
 
 _ROOT_LAYER_FILENAME = "maya_root.usd"
 
