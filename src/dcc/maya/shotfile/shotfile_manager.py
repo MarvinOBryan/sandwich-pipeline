@@ -17,6 +17,7 @@ from core.ui import MessageDialog
 from core.ui.save_version_dialog import PromoteVersionDialog, SaveVersionDialog
 from core.ui.version_browser import VersionBrowserWidget
 from dcc.maya.runtime import get_main_qt_window
+from dcc.maya.util.on_open import install_on_open_node
 from core.shotgrid import (
     SGEntity,
     Shot,
@@ -307,28 +308,7 @@ class MShotFileManager(FileManager):
         mc.file(str(path), open=True, force=True)
 
     def _post_open_file(self, entity: SGEntity) -> None:
-        """create `lndOnOpen` script node"""
-        ON_OPEN_SCRIPT = "lndOnOpen"
-
-        if mc.objExists(ON_OPEN_SCRIPT):
-            return
-
-        cls = self.__class__
-        # Import from the package that re-exports the class (one level up from
-        # the module). Lets subclasses in other packages reuse this without
-        # overriding `_post_open_file` just to swap the import line.
-        import_package = cls.__module__.rsplit(".", 1)[0]
-        mc.scriptNode(
-            beforeScript=(
-                f"from {import_package} import {cls.__name__};"
-                f"{cls.__name__}.{cls.run_on_open.__name__}()"
-            ),
-            name=ON_OPEN_SCRIPT,
-            scriptType=1,
-            sourceType="python",
-        )
-        # script node is created, will not run this session, so run manually
-        self.run_on_open()
+        install_on_open_node(self)
 
     def _import_camera(self) -> None:
         shot_path = self.shot.shot_path

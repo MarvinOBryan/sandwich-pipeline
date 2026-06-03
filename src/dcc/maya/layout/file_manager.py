@@ -12,6 +12,7 @@ from pxr import Gf, Usd, UsdGeom
 from core.util.paths import get_production_path
 
 from dcc.maya.runtime import get_main_qt_window
+from dcc.maya.util.on_open import install_on_open_node
 from core.shotgrid import Environment, SGEntity, ShotGrid
 from core.util import FileManager, log_errors
 
@@ -107,9 +108,6 @@ class MLayoutFileManager(FileManager):
         mc.file(str(path), open=True, force=True)
 
     def _post_open_file(self, entity: SGEntity) -> None:
-        """create `boboOnOpen` script node"""
-        ON_OPEN_SCRIPT = "boboOnOpen"
-
         # set save path
         if not entity.path:
             mc.error("entity has no file path")
@@ -121,21 +119,7 @@ class MLayoutFileManager(FileManager):
         mc.file(rename=str(file_path))
         mc.file(save=True, type="mayaBinary")
 
-        if mc.objExists(ON_OPEN_SCRIPT):
-            return
-
-        classname = self.__class__.__name__
-        mc.scriptNode(
-            beforeScript=(
-                f"from dcc.maya.layout import {classname};"
-                f"{classname}.{self.__class__.run_on_open.__name__}()"
-            ),
-            name=ON_OPEN_SCRIPT,
-            scriptType=1,
-            sourceType="python",
-        )
-        # script node is created, will not run this session, so run manually
-        self.run_on_open()
+        install_on_open_node(self)
 
     def _setup_file(self, path: Path, entity) -> None:
         mc.file(newFile=True, force=True)
