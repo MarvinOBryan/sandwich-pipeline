@@ -26,7 +26,7 @@ from core.ui import MessageDialog
 
 from dcc.maya.runtime import get_main_qt_window
 
-from . import cameras, dialogs, publish, state, style
+from . import cameras, dialogs, monitor, playback, publish, state, style
 from .file_manager import SEQUENCE_PROXY_RE
 from .state import PrevisShot, PrevisState
 from .timeline import PrevisTimeline
@@ -88,6 +88,15 @@ class PrevisPanel(MayaQWidgetDockableMixin, QWidget):  # type: ignore[misc]
 
         row.addStretch(1)
 
+        self._monitor_label = QLabel("", bar)
+        self._monitor_label.setObjectName("info")
+        row.addWidget(self._monitor_label)
+
+        monitor_btn = QPushButton("set monitor", bar)
+        monitor_btn.setStyleSheet(style.TOOLBAR_BUTTON)
+        monitor_btn.clicked.connect(self.pick_monitor)
+        row.addWidget(monitor_btn)
+
         add_btn = QPushButton("+ shot", bar)
         add_btn.setStyleSheet(style.TOOLBAR_BUTTON)
         add_btn.clicked.connect(self.add_shot)
@@ -102,6 +111,7 @@ class PrevisPanel(MayaQWidgetDockableMixin, QWidget):  # type: ignore[misc]
     def refresh(self) -> None:
         self._timeline.set_state(self._state)
         self._update_status_text()
+        self._update_monitor_label()
         self._warn_orphans()
 
     def _persist(self) -> None:
@@ -134,6 +144,17 @@ class PrevisPanel(MayaQWidgetDockableMixin, QWidget):  # type: ignore[misc]
         if not isinstance(code, str):
             return None
         return code if SEQUENCE_PROXY_RE.match(code) else None
+
+    def pick_monitor(self) -> None:
+        monitor.pick_monitor(on_bound=self._on_monitor_bound)
+
+    def _on_monitor_bound(self, panel: str) -> None:
+        self._update_monitor_label()
+        playback.sync_monitor()  # show the current shot's camera immediately
+
+    def _update_monitor_label(self) -> None:
+        panel = monitor.get_monitor()
+        self._monitor_label.setText(f"monitor: {panel}" if panel else "")
 
     def _warn_orphans(self) -> None:
         orphans = cameras.find_orphan_cameras(self._state)

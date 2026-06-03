@@ -7,7 +7,7 @@ from typing import cast
 
 import maya.cmds as mc
 
-from . import cameras
+from . import cameras, monitor
 from .state import PrevisState, read_state
 
 log = logging.getLogger(__name__)
@@ -54,7 +54,8 @@ def resolve_camera_for_frame(
     return None
 
 
-def _on_time_changed() -> None:
+def sync_monitor() -> None:
+    """Point the monitor at whatever camera the playhead currently sits on."""
     state = read_state()
     if state is None or not state.shots:
         return
@@ -64,8 +65,9 @@ def _on_time_changed() -> None:
     if not ns:
         return
     shape = cameras.camera_shape_for_namespace(ns)
-    if not shape:
-        return
-    current = mc.lookThru(query=True) or ""
-    if current != shape:
-        mc.lookThru(shape)
+    if shape:
+        monitor.look_through(shape)
+
+
+def _on_time_changed() -> None:
+    sync_monitor()
