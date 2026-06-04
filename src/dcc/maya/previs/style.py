@@ -35,6 +35,10 @@ CODE_EMPTY = "#6E665A"
 CODE_MODIFIED = "#E5B340"
 CODE_PUBLISHED = "#88AA70"
 
+# --- playhead ---------------------------------------------------------------
+
+PLAYHEAD = "#E5484D"  # head + current-frame line spanning every track
+
 TIER_NARROW = 40  # below: only the colored sliver; tooltip carries the info
 TIER_COMPACT = 110  # below: drop name + start/end labels, keep the length pill
 

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import maya.cmds as mc
 from Qt import QtGui
 from Qt.QtWidgets import (
     QFrame,
@@ -22,6 +23,7 @@ from Qt.QtWidgets import (
 from . import _qt, dialogs, playback, style
 from .add_alt_button import AddAltButton
 from .cam_block import BLOCK_HEIGHT, CamBlock
+from .playhead import Playhead
 from .ruler import RULER_HEIGHT, Ruler
 from .shot_header import HEADER_HEIGHT, ShotHeader
 from .state import PrevisShot, PrevisState, display_name
@@ -72,6 +74,9 @@ class PrevisTimeline(QWidget):
         self._inner.setStyleSheet(f"background: {style.PANEL_BG};")
         self._scroll.setWidget(self._inner)
 
+        # Free child (not in the grid) so a rebuild never disturbs it.
+        self._playhead = Playhead(self._inner)
+
         self._grid = QGridLayout(self._inner)
         self._grid.setContentsMargins(0, 0, 0, 0)
         self._grid.setHorizontalSpacing(0)
@@ -108,6 +113,7 @@ class PrevisTimeline(QWidget):
             )
             empty.setAlignment(_qt.ALIGN_CENTER)
             self._grid.addWidget(empty, 0, 0, 1, 2)
+            self._playhead.hide()
             return
 
         shots = state.shots
@@ -121,6 +127,20 @@ class PrevisTimeline(QWidget):
         self._add_header_row(shots)
         deepest_row = self._add_track_rows(shots, ranges)
         self._apply_trailing_stretches(len(shots), deepest_row)
+        self.sync_playhead()
+
+    def sync_playhead(self) -> None:
+        """Move the playhead to the current scene frame; hide it when there's no sequence."""
+        if self._last_state is None or not self._last_state.shots:
+            self._playhead.hide()
+            return
+        frame = int(mc.currentTime(query=True))
+        x = TRACK_LABEL_WIDTH + (frame - playback.FRAME_START) * self._px_per_frame
+        self._playhead.move_to(x, self._inner.height())
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self.sync_playhead()  # keep the line spanning the (re)sized track stack
 
     # ----- private layout helpers -----------------------------------------
 
@@ -154,7 +174,7 @@ class PrevisTimeline(QWidget):
         )
         self._grid.addWidget(spacer, _ROW_RULER, 0)
 
-        ruler = Ruler(self._inner)
+        ruler = Ruler(self._inner, on_scrub=self._controller.scrub_to_frame)
         ruler.set_range(first_frame, last_frame)
         self._grid.addWidget(ruler, _ROW_RULER, 1, 1, num_shots)
         self._ruler = ruler

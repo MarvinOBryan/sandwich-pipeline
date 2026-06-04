@@ -15,7 +15,7 @@ from Qt.QtWidgets import (
     QWidget,
 )
 
-from . import cameras, style
+from . import _qt, cameras, style
 from .state import PrevisShot
 
 if TYPE_CHECKING:
@@ -45,6 +45,7 @@ class ShotHeader(QFrame):
         self.setFixedHeight(HEADER_HEIGHT)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.setAutoFillBackground(True)
+        self.setCursor(_qt.POINTING_HAND)  # clicking the header jumps the playhead here
         self.setStyleSheet(
             f"ShotHeader {{ background: {style.PANEL_BG_HEADER}; "
             f"border-right: 1px solid {style.PANEL_BORDER_SOFT}; }}"
@@ -75,6 +76,11 @@ class ShotHeader(QFrame):
 
     def sizeHint(self) -> QtCore.QSize:
         return QtCore.QSize(1, HEADER_HEIGHT)
+
+    def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
+        if event.button() == _qt.LEFT_BUTTON:
+            self._controller.jump_to_shot(self._shot.id)
+        super().mousePressEvent(event)
 
     def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
         super().resizeEvent(event)

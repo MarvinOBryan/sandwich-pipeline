@@ -114,6 +114,17 @@ class PrevisPanel(MayaQWidgetDockableMixin, QWidget):  # type: ignore[misc]
         self._update_monitor_label()
         self._warn_orphans()
 
+    def install_playhead_callback(self) -> None:
+        """Resync the playhead on every scene time change, for the panel's lifetime.
+
+        Parented to the workspaceControl so Maya kills the job when the panel closes —
+        deliberately separate from playback.py's file-scoped monitor job.
+        """
+        mc.scriptJob(
+            event=("timeChanged", self._timeline.sync_playhead),
+            parent=WORKSPACE_CONTROL_NAME,
+        )
+
     def _persist(self) -> None:
         state.write_state(self._state)
         self.refresh()
@@ -162,6 +173,21 @@ class PrevisPanel(MayaQWidgetDockableMixin, QWidget):  # type: ignore[misc]
             dialogs.show_orphan_warning(self, orphans)
 
     # ---------- controller methods (called by child widgets) ----------
+
+    def scrub_to_frame(self, frame: int) -> None:
+        """Set scene time, then resync the playhead directly.
+
+        The monitor follows via the `timeChanged` job; the playhead we move here
+        instead, since that job is coalesced and lags an interactive scrub.
+        """
+        mc.currentTime(frame)
+        self._timeline.sync_playhead()
+
+    def jump_to_shot(self, shot_id: str) -> None:
+        ranges = playback.compute_shot_ranges(self._state)
+        shot_range = ranges.get(shot_id)
+        if shot_range is not None:
+            self.scrub_to_frame(shot_range[0])
 
     def add_shot(self) -> None:
         if not self._guard_previs_file():
@@ -360,6 +386,7 @@ def _restore() -> None:
     widget_ptr = MQtUtil.findControl(_panel_instance.objectName())
     if workspace_ptr and widget_ptr:
         MQtUtil.addWidgetToMayaLayout(int(widget_ptr), int(workspace_ptr))
+    _panel_instance.install_playhead_callback()
 
 
 # Generated from __name__ so an IDE module-rename stays consistent without manual edits.
@@ -389,6 +416,7 @@ def launch() -> None:
         uiScript=UI_SCRIPT,
         workspaceControlName=WORKSPACE_CONTROL_NAME,
     )
+    _panel_instance.install_playhead_callback()
 
 
 def close() -> None:
