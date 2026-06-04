@@ -375,9 +375,9 @@ class PrevisPanel(MayaQWidgetDockableMixin, QWidget):  # type: ignore[misc]
             return
         try:
             sg_shot = self._conn().get_shot(code=shot.shotgrid_code)
-            publish.publish_shot(shot, sg_shot)
+            publish.publish_shot_camera(shot, sg_shot)
         except Exception as exc:
-            log.exception("publish_shot failed")
+            log.exception("publish_shot_camera failed")
             MessageDialog(self, str(exc), "Publish Failed").exec_()
             return
         self._persist()
@@ -386,9 +386,9 @@ class PrevisPanel(MayaQWidgetDockableMixin, QWidget):  # type: ignore[misc]
         if not self._state.shots:
             return
         try:
-            paths = publish.publish_sequence(self._state, self._conn())
+            paths = publish.publish_all_shot_cameras(self._state, self._conn())
         except Exception as exc:
-            log.exception("publish_sequence failed")
+            log.exception("publish_all_shot_cameras failed")
             MessageDialog(self, str(exc), "Publish Failed").exec_()
             return
         QMessageBox.information(self, "Publish", f"Published {len(paths)} shot(s).")

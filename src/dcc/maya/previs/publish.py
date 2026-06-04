@@ -1,4 +1,8 @@
-"""Per-shot and per-sequence publish for previs cameras."""
+"""Publish previs shot cameras to `cam/cam.usd` — one shot or the whole sequence.
+
+This is the cam.usd bake only. Breaking out the full RLO scene (meshes, blocking
+anim, cut stamps) is a separate operation; see `breakout.py`.
+"""
 
 from __future__ import annotations
 
@@ -22,8 +26,10 @@ from .state import PrevisShot, PrevisState, utcnow_iso
 
 log = logging.getLogger(__name__)
 
+_DIALOG_TITLE = "Publish Shot Cameras"
 
-def publish_shot(previs_shot: PrevisShot, sg_shot: Shot) -> Path:
+
+def publish_shot_camera(previs_shot: PrevisShot, sg_shot: Shot) -> Path:
     """Export the primary to `<shot>/cam/cam.usd`, retimed to start at the shot's `cut_in`."""
     if not previs_shot.primary:
         raise ValueError(f"Previs shot {previs_shot.id} has no primary camera.")
@@ -65,32 +71,32 @@ def publish_shot(previs_shot: PrevisShot, sg_shot: Shot) -> Path:
     return publish_path
 
 
-def publish_sequence(state: PrevisState, conn: ShotGrid) -> list[Path]:
+def publish_all_shot_cameras(state: PrevisState, conn: ShotGrid) -> list[Path]:
     paths: list[Path] = []
     for shot in state.shots:
         if not shot.shotgrid_code:
             log.info("Skipping unpaired previs shot %s.", shot.id)
             continue
         sg_shot = conn.get_shot(code=shot.shotgrid_code)
-        paths.append(publish_shot(shot, sg_shot))
+        paths.append(publish_shot_camera(shot, sg_shot))
     if paths:
         state.last_published_at = utcnow_iso()
     return paths
 
 
-def publish_sequence_interactive() -> None:
+def publish_all_shot_cameras_interactive() -> None:
     """Shelf-button entry: read state, connect to ShotGrid, publish, report.
 
-    Wraps `publish_sequence` so the artist gets file-not-previs and ShotGrid-
-    connection failures as readable dialogs instead of console tracebacks.
+    Wraps `publish_all_shot_cameras` so the artist gets file-not-previs and
+    ShotGrid-connection failures as readable dialogs instead of console tracebacks.
     """
     parent = get_main_qt_window()
     current_state = state.read_state()
     if current_state is None:
         MessageDialog(
             parent,
-            "Not in a previs file. Open a previs file before publishing the sequence.",
-            "Publish Sequence",
+            "Not in a previs file. Open a previs file before publishing shot cameras.",
+            _DIALOG_TITLE,
         ).exec_()
         return
 
@@ -101,18 +107,18 @@ def publish_sequence_interactive() -> None:
         MessageDialog(
             parent,
             f"Could not connect to ShotGrid.\n\n{exc}",
-            "Publish Sequence",
+            _DIALOG_TITLE,
         ).exec_()
         return
 
     try:
-        paths = publish_sequence(current_state, conn)
+        paths = publish_all_shot_cameras(current_state, conn)
     except Exception as exc:
-        log.exception("Previs sequence publish failed.")
+        log.exception("Previs shot-camera publish failed.")
         MessageDialog(
             parent,
             f"Publish failed.\n\n{exc}",
-            "Publish Sequence",
+            _DIALOG_TITLE,
         ).exec_()
         return
 
@@ -123,10 +129,10 @@ def publish_sequence_interactive() -> None:
         MessageDialog(
             parent,
             "No shots were published. Assign ShotGrid codes to shots first.",
-            "Publish Sequence",
+            _DIALOG_TITLE,
         ).exec_()
         return
 
     lines = [f"Published {len(paths)} shot{'s' if len(paths) != 1 else ''}:", ""]
     lines.extend(str(p) for p in paths)
-    MessageDialog(parent, "\n".join(lines), "Publish Sequence").exec_()
+    MessageDialog(parent, "\n".join(lines), _DIALOG_TITLE).exec_()
