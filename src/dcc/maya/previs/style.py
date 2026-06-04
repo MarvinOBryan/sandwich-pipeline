@@ -29,11 +29,17 @@ SHOT_EMPTY_EDGE = "#4A4A4A"
 TRUNC_EDGE = "#C97D52"
 TRUNC_TEXT = "#F4D4BE"
 
-# --- code state dots --------------------------------------------------------
+# --- break-out dot (RLO) ----------------------------------------------------
 
-CODE_EMPTY = "#6E665A"
-CODE_MODIFIED = "#E5B340"
-CODE_PUBLISHED = "#88AA70"
+RLO_NO_CODE = "#6E665A"  # unpaired — drawn as a dashed outline
+RLO_READY = "#6E8BA8"  # paired, never broken out
+RLO_DRIFTED = "#E5B340"  # RLO exists, primary moved since
+RLO_IN_SYNC = "#88AA70"  # live primary matches last break-out
+
+# --- cam-publish pip --------------------------------------------------------
+
+CAM_ABSENT_STALE = "#585348"  # cam.usd missing or stale — dim
+CAM_IN_SYNC = "#6F8C5A"  # cam.usd matches last publish — muted green
 
 # --- playhead ---------------------------------------------------------------
 
