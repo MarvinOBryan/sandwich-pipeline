@@ -11,6 +11,7 @@ from maya.app.general.mayaMixin import MayaQWidgetDockableMixin  # type: ignore
 from maya.OpenMayaUI import MQtUtil
 from Qt.QtCompat import wrapInstance
 from Qt.QtWidgets import (
+    QCheckBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -96,6 +97,13 @@ class PrevisPanel(MayaQWidgetDockableMixin, QWidget):  # type: ignore[misc]
         monitor_btn.setStyleSheet(style.TOOLBAR_BUTTON)
         monitor_btn.clicked.connect(self.pick_monitor)
         row.addWidget(monitor_btn)
+
+        clean_check = QCheckBox("clean", bar)
+        clean_check.setStyleSheet(style.TOOLBAR_CHECKBOX)
+        clean_check.setChecked(monitor.clean_view())
+        clean_check.setToolTip("Hide grid, cameras, and rig controls in the monitor")
+        clean_check.toggled.connect(monitor.set_clean_view)
+        row.addWidget(clean_check)
 
         add_btn = QPushButton("+ shot", bar)
         add_btn.setStyleSheet(style.TOOLBAR_BUTTON)

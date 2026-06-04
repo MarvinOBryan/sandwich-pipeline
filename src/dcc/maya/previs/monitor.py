@@ -13,11 +13,12 @@ from typing import Callable, cast
 
 import maya.cmds as mc
 
-from dcc.maya.util.optionvar import StringOptionVar
+from dcc.maya.util.optionvar import BoolOptionVar, StringOptionVar
 
 log = logging.getLogger(__name__)
 
 _BOUND_PANEL = StringOptionVar("previs.monitorPanel", "")
+_CLEAN_VIEW = BoolOptionVar("previs.monitorClean", False)
 _PICK_CONTEXT = "previsMonitorPick"
 
 _MASK_COLOR = (0.0, 0.0, 0.0)  # opaque black bars outside the resolution gate
@@ -32,7 +33,22 @@ def get_monitor() -> str | None:
 
 def set_monitor(panel: str) -> None:
     _BOUND_PANEL.value = panel
+    # A freshly bound panel honors the current clean-view preference.
+    _apply_clean(panel, _CLEAN_VIEW.value)
     log.info("Previs monitor bound to %s.", panel)
+
+
+def clean_view() -> bool:
+    """Whether the monitor strips chrome and rig controls down to a render-like frame."""
+    return _CLEAN_VIEW.value
+
+
+def set_clean_view(on: bool) -> None:
+    """Persist the clean-view preference and apply it to the bound monitor, if any."""
+    _CLEAN_VIEW.value = on
+    panel = get_monitor()
+    if panel is not None:
+        _apply_clean(panel, on)
 
 
 def pick_monitor(on_bound: Callable[[str], None] | None = None) -> None:
@@ -73,6 +89,34 @@ def _bind_under_pointer(
         if on_bound:
             on_bound(panel)
     mc.setToolTo(previous_ctx)
+
+
+def _apply_clean(panel: str, on: bool) -> None:
+    # Clean view hides rig controls, construction aids, and viewport chrome, leaving
+    # only the rendered geometry and gate mask. Work view shows them all again, so the
+    # toggle is its own inverse — no snapshot of the panel's prior state to keep.
+    #
+    # headsUpDisplay is pinned on, never hidden: Maya draws the camera's gate mask in
+    # the same 2D ornament layer as the HUD, so headsUpDisplay=False strips the bars.
+    # Hiding cameras only drops their icons — the look-through gate is unaffected.
+    visible = not on
+    mc.modelEditor(
+        panel,
+        edit=True,
+        headsUpDisplay=True,
+        cameras=visible,
+        grid=visible,
+        manipulators=visible,
+        nurbsCurves=visible,
+        locators=visible,
+        joints=visible,
+        handles=visible,
+        deformers=visible,
+        dimensions=visible,
+        pivots=visible,
+        controlVertices=visible,
+        hulls=visible,
+    )
 
 
 def _apply_gate(camera_shape: str) -> None:

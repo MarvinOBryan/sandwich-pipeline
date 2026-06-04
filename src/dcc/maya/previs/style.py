@@ -77,6 +77,27 @@ QPushButton:hover {{ border-color: {SHOT_ACTIVE_EDGE}; color: {SHOT_ACTIVE_TEXT}
 QPushButton:disabled {{ color: {PANEL_TEXT_DIM}; border-color: {PANEL_BORDER_SOFT}; }}
 """
 
+TOOLBAR_CHECKBOX = f"""
+QCheckBox {{
+    color: {PANEL_TEXT};
+    font-size: 11px;
+    letter-spacing: 1px;
+    spacing: 6px;
+}}
+QCheckBox::indicator {{
+    width: 12px;
+    height: 12px;
+    border: 1px solid {PANEL_BORDER};
+    border-radius: 2px;
+    background: {PANEL_BG};
+}}
+QCheckBox::indicator:hover {{ border-color: {SHOT_ACTIVE_EDGE}; }}
+QCheckBox::indicator:checked {{
+    background: {SHOT_ACTIVE_EDGE};
+    border-color: {SHOT_ACTIVE_EDGE};
+}}
+"""
+
 TRACK_LABEL_PRIMARY = f"""
 QLabel {{
     background: {PANEL_BG_DEEP};
