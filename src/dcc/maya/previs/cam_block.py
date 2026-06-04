@@ -1,6 +1,7 @@
-"""Single camera block. Drag an alternate onto its column's primary to promote;
-double-click an alt for the same; right-click for menu; drag the right-edge
-handle on primaries to resize the shot.
+"""Single camera block. Drag a block onto a Maya viewport to look through that
+camera; drag an alternate onto its column's primary to promote; double-click an
+alt for the same; right-click for menu; drag the right-edge handle on primaries
+to resize the shot.
 
 The resize handle is a dedicated child widget rather than edge-detection inside
 the QFrame so mouse events land unambiguously.
@@ -278,21 +279,15 @@ class CamBlock(QFrame):
         delta_frames = int(round(delta_px / self._px_per_frame))
         return max(1, self._length_frames + delta_frames)
 
-    # --- drag source (alts only) --------------------------------------------
-
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:
-        if event.button() == _qt.LEFT_BUTTON and not self._is_primary:
+        if event.button() == _qt.LEFT_BUTTON:
             self._press_pos = event.pos()
             event.accept()
             return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:
-        if (
-            self._press_pos is not None
-            and not self._is_primary
-            and event.buttons() & _qt.LEFT_BUTTON
-        ):
+        if self._press_pos is not None and event.buttons() & _qt.LEFT_BUTTON:
             travel = (event.pos() - self._press_pos).manhattanLength()
             if travel >= QApplication.startDragDistance():
                 self._start_drag()
@@ -319,7 +314,11 @@ class CamBlock(QFrame):
         pixmap = self.grab()
         drag.setPixmap(pixmap)
         drag.setHotSpot(QtCore.QPoint(pixmap.width() // 2, pixmap.height() // 2))
+        # Drop on a same-shot primary to promote (dropEvent); drop on a Maya viewport
+        # to look through this camera. Viewports aren't Qt drop targets, so we read the
+        # viewport under the cursor after the drag rather than trusting its result.
         drag.exec_(_qt.MOVE_ACTION)
+        self._controller.look_through_under_cursor(self._namespace)
 
     # --- drop target (primaries only) ---------------------------------------
 

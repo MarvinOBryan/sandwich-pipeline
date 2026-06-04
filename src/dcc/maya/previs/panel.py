@@ -246,6 +246,28 @@ class PrevisPanel(MayaQWidgetDockableMixin, QWidget):  # type: ignore[misc]
         shot.durations[chosen] = state.DEFAULT_SHOT_DURATION
         self._persist()
 
+    def look_through_under_cursor(self, namespace: str) -> None:
+        """Aim the work viewport under the cursor at `namespace`'s camera.
+
+        Maya viewports aren't Qt drop targets, so a drag released over one never
+        fires a dropEvent — we ask Maya which panel the cursor ended over instead.
+        """
+        panel = cast(str, mc.getPanel(underPointer=True))
+        if panel not in (mc.getPanel(type="modelPanel") or []):
+            return  # released over the panel's own UI or empty space
+        if panel == monitor.get_monitor():
+            # The monitor re-aims at the active shot on every time change, so an aim
+            # here would just revert
+            mc.inViewMessage(
+                assistMessage="The monitor follows the active shot; drop on a work viewport.",
+                position="midCenter",
+                fade=True,
+            )
+            return
+        camera_shape = cameras.camera_shape_for_namespace(namespace)
+        if camera_shape:
+            mc.lookThru(panel, camera_shape)
+
     def promote_to_primary(self, shot_id: str, namespace: str) -> None:
         shot = self._state.find_shot(shot_id)
         if shot is None or shot.primary == namespace:
