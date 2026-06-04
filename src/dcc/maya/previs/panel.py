@@ -334,7 +334,17 @@ class PrevisPanel(MayaQWidgetDockableMixin, QWidget):  # type: ignore[misc]
                 "Assign Code",
             ).exec_()
             return
-        chosen = dialogs.pick_shotgrid_code_for_sequence(self, self._conn(), code[0])
+        letter = code[0]
+        codes = dialogs.shotgrid_codes_for_sequence(self._conn(), letter)
+        if not codes:
+            MessageDialog(
+                self,
+                f"No shots in ShotGrid for sequence {letter}. "
+                "Create the shot in ShotGrid first, then assign it here.",
+                "Assign Code",
+            ).exec_()
+            return
+        chosen = dialogs.pick_shotgrid_code(self, codes, letter)
         if not chosen:
             return
         shot = self._state.find_shot(shot_id)

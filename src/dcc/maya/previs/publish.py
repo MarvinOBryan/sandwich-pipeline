@@ -61,10 +61,7 @@ def publish_shot(previs_shot: PrevisShot, sg_shot: Shot) -> Path:
     # Shift exported time samples so cam.usd starts at the shot's canonical cut_in.
     offset_layer(publish_path, float(sg_shot.cut_in) - primary_start)
 
-    previs_shot.published_primary = previs_shot.primary
-    previs_shot.published_animation_hash = cameras.compute_animation_hash(
-        previs_shot.primary
-    )
+    previs_shot.cam_animation_hash = cameras.compute_animation_hash(previs_shot.primary)
     return publish_path
 
 

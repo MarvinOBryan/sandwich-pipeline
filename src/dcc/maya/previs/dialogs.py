@@ -12,21 +12,21 @@ from core.ui import FilteredListDialog
 from core.shotgrid import ShotGrid
 
 
-def pick_shotgrid_code_for_sequence(
+def shotgrid_codes_for_sequence(conn: ShotGrid, sequence_letter: str) -> list[str]:
+    """Real shot codes (e.g. `A_010`) for the given sequence letter, sorted."""
+    pattern = re.compile(rf"^{re.escape(sequence_letter)}_\d+$")
+    return sorted(s.code for s in conn.find_shots() if s.code and pattern.match(s.code))
+
+
+def pick_shotgrid_code(
     parent: QWidget,
-    conn: ShotGrid,
+    codes: Sequence[str],
     sequence_letter: str,
 ) -> str | None:
-    """Prompt the user to pick a real shot code (e.g. `A_010`) for the given sequence letter."""
-    pattern = re.compile(rf"^{re.escape(sequence_letter)}_\d+$")
-    codes = sorted(
-        s.code for s in conn.find_shots() if s.code and pattern.match(s.code)
-    )
-    if not codes:
-        return None
+    """Prompt the user to pick one of `codes`; None on cancel."""
     dialog = FilteredListDialog(
         parent,
-        codes,
+        list(codes),
         title="Assign ShotGrid Code",
         list_label=f"Select the shot to pair with this previs shot (sequence {sequence_letter}):",
         accept_button_name="Assign",

@@ -16,7 +16,7 @@ import maya.cmds as mc
 log = logging.getLogger(__name__)
 
 FILEINFO_KEY = "previs_sequencer_state"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DEFAULT_SHOT_DURATION = 72  # frames; 3 seconds @ 24fps
 
 
@@ -39,8 +39,8 @@ class PrevisShot:
     alternates: list[str] = field(default_factory=list)
     durations: dict[str, int] = field(default_factory=dict)
     shotgrid_code: str | None = None
-    published_primary: str | None = None
-    published_animation_hash: str | None = None
+    rlo_animation_hash: str | None = None
+    cam_animation_hash: str | None = None
 
     @property
     def all_cameras(self) -> list[str]:
@@ -96,8 +96,8 @@ class PrevisState:
                     "alternates": list(s.alternates),
                     "durations": dict(s.durations),
                     "shotgrid_code": s.shotgrid_code,
-                    "published_primary": s.published_primary,
-                    "published_animation_hash": s.published_animation_hash,
+                    "rlo_animation_hash": s.rlo_animation_hash,
+                    "cam_animation_hash": s.cam_animation_hash,
                 }
                 for s in self.shots
             ],
@@ -108,13 +108,13 @@ class PrevisState:
 
 
 def _load_shot_fields(s: dict[str, Any]) -> dict[str, Any]:
-    """Build PrevisShot kwargs from raw JSON, migrating the v1 `duration_frames` field."""
+    """Build PrevisShot kwargs from raw JSON, migrating legacy v1 field names."""
     primary = str(s.get("primary") or "")
     durations_raw = s.get("durations")
     if isinstance(durations_raw, dict):
         durations = {str(k): int(v) for k, v in durations_raw.items()}
     else:
-        # v1 schema stored a single `duration_frames` on the shot (= primary's duration).
+        # v1 stored a single `duration_frames` (= the primary's duration).
         legacy = int(s.get("duration_frames") or DEFAULT_SHOT_DURATION)
         durations = {primary: legacy} if primary else {}
     return dict(
@@ -123,8 +123,10 @@ def _load_shot_fields(s: dict[str, Any]) -> dict[str, Any]:
         alternates=list(s.get("alternates") or []),
         durations=durations,
         shotgrid_code=s.get("shotgrid_code"),
-        published_primary=s.get("published_primary"),
-        published_animation_hash=s.get("published_animation_hash"),
+        rlo_animation_hash=s.get("rlo_animation_hash"),
+        # v1 named the cam-bake hash `published_animation_hash`.
+        cam_animation_hash=s.get("cam_animation_hash")
+        or s.get("published_animation_hash"),
     )
 
 

@@ -128,12 +128,12 @@ class ShotHeader(QFrame):
     def _compute_state(self) -> str:
         if not self._shot.shotgrid_code:
             return _STATE_EMPTY
-        if not self._shot.primary or not self._shot.published_animation_hash:
+        if not self._shot.primary or not self._shot.cam_animation_hash:
             return _STATE_MODIFIED
         live = cameras.compute_animation_hash(self._shot.primary)
         return (
             _STATE_PUBLISHED
-            if live == self._shot.published_animation_hash
+            if live == self._shot.cam_animation_hash
             else _STATE_MODIFIED
         )
 
