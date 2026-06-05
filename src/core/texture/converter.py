@@ -5,7 +5,7 @@ import os
 import re
 import subprocess
 import time
-from math import ceil, floor, sqrt
+from math import ceil, floor, log2, sqrt
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
 from core import telemetry
 from core.util import silent_startupinfo
+from core.util.paths import get_repo_root
 from dcc.substance_painter.util.progress import (
     PublishProgressCallback,
     PublishProgressUpdate,
@@ -154,6 +155,49 @@ class TexConverter:
             ]
             # fmt: on
 
+        @self._debug_out
+        def b2r_cmd(img: str) -> list[str]:
+            # OIIO's `-obump` writes a 6-channel slope texture (first and
+            # second moments of the bump slopes) consumable by
+            # `PxrBumpRoughness`. `bumpformat=height` matches the EXR
+            # height map produced by the `norm2height` pre-pass.
+            # fmt: off
+            return [
+                str(Executables.oiiotool),
+                img,
+                "--planarconfig", "separate",
+                "-obump:bumpformat=height",
+                f"{str(self.tex_path / Path(img).stem)}.b2r",
+            ]
+            # fmt: on
+
+        @self._debug_out
+        def norm2height(img: str) -> list[str]:
+            """Convert normal map to height map
+            This is necessary because if we run b2r conversion directly on a
+            normal map, reversed UV tiles will have incorrect normals.
+            We can't run b2r conversion directly on the height map from
+            Substance because that doesn't include normal painting or
+            stickers. Thus, the remaining option is to convert the Normal map
+            from Substance back into a height map."""
+            img_dims = [str(int(log2(d))) for d in self._img_dims(img)]
+            # fmt: off
+            return [
+                str(Executables.sbsrender),
+                "render",
+                "--engine", "d3d11pc",
+                "--exr-format-compression", "zip",
+                "--output-bit-depth", "16f",
+                "--output-format", "exr",
+                "--input", str(get_repo_root() / "resources/sbs/normal2height.sbsar"),
+                "--set-entry", f"input@{img}",
+                "--set-value", f"$outputsize@{','.join(img_dims)}",
+                "--output-path", str(Path(img).parent),
+                "--output-name", img.replace(".pre-b2r", ""),
+            ]
+            # fmt: on
+
+        pre_cmdlines: list[list[str]] = []
         cmdlines: list[list[str]] = []
         for imgs in self.imgs_by_tex_set:
             log.debug(imgs)
@@ -161,12 +205,20 @@ class TexConverter:
                 if img.endswith(".jpeg"):
                     continue
                 log.debug(f"        {img}")
-                cmdlines.append(
-                    tex_cmd(
-                        img,
-                        is_color=("Color" in img or "Emissive" in img),
+                if "pre-b2r" in img:
+                    pre_cmdlines.append(norm2height(img))
+                    cmdlines.append(b2r_cmd(img.replace(".pre-b2r", "")))
+                else:
+                    cmdlines.append(
+                        tex_cmd(
+                            img,
+                            is_color=("Color" in img or "Emissive" in img),
+                        )
                     )
-                )
+
+        self._wait_and_check_cmds(
+            pre_cmdlines, batch_size=self.batch_size, skip_check=True
+        )
 
         total_tex = len(cmdlines)
         if total_tex <= 0:

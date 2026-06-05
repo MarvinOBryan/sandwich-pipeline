@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import substance_painter as sp
 
-from core.struct.material import DisplacementSource, NormalSource
+from core.struct.material import DisplacementSource, NormalSource, NormalType
 
 
 @dataclass
@@ -15,6 +15,7 @@ class TexSetExportSettings:
     extra_channels: set[sp.textureset.Channel]
     resolution: int
     displacement_source: DisplacementSource
+    normal_type: NormalType
     normal_source: NormalSource
 
 
