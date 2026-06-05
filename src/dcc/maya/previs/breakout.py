@@ -2,8 +2,9 @@
 
 A destructive full re-bake: slices the live previs scene down to one shot,
 retimes it to start at frame 1001, trims keys to the shot range plus 8-frame
-handles, and writes `shot/<code>/rlo/<code>.mb`. Off-shot cameras are dropped;
-Stamps cut_in/cut_out/cut_duration onto the ShotGrid Shot.Does not bake cam.usd.
+handles, and writes `shot/<code>/rlo/<code>.mb`. Off-shot cameras are dropped,
+and cut_in/cut_out/cut_duration are stamped onto the ShotGrid Shot. Does not
+bake cam.usd.
 
 The slice is cut from the open scene in place, so the bake saves the previs file
 first, mutates it, exports, then reopens it to restore the artist's session.

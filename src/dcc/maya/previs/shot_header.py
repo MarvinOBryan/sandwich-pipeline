@@ -202,7 +202,11 @@ class ShotHeader(QFrame):
         )
         menu.addSeparator()
         menu.addAction(
-            "Publish this shot", lambda: self._controller.publish_shot(self._shot.id)
+            "Break out to RLO", lambda: self._controller.break_out_shot(self._shot.id)
+        )
+        menu.addAction(
+            "Publish shot camera",
+            lambda: self._controller.publish_shot_camera(self._shot.id),
         )
         menu.addSeparator()
         menu.addAction(

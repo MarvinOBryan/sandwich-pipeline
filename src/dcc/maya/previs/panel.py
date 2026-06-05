@@ -16,18 +16,28 @@ from Qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
-    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
 )
 
 from core.shotgrid import ShotGrid
-from core.ui import MessageDialog
+from core.ui import MessageDialog, MessageDialogCustomButtons
+from core.util.paths import get_production_path
 
 from dcc.maya.runtime import get_main_qt_window
 
-from . import cameras, dialogs, monitor, playback, publish, state, style
+from . import (
+    breakout,
+    cameras,
+    dialogs,
+    monitor,
+    playback,
+    publish,
+    state,
+    status,
+    style,
+)
 from .file_manager import SEQUENCE_PROXY_RE
 from .state import PrevisShot, PrevisState
 from .timeline import PrevisTimeline
@@ -110,9 +120,14 @@ class PrevisPanel(MayaQWidgetDockableMixin, QWidget):  # type: ignore[misc]
         add_btn.clicked.connect(self.add_shot)
         row.addWidget(add_btn)
 
-        publish_btn = QPushButton("publish all", bar)
+        breakout_btn = QPushButton("break out all", bar)
+        breakout_btn.setStyleSheet(style.TOOLBAR_BUTTON)
+        breakout_btn.clicked.connect(self.break_out_all)
+        row.addWidget(breakout_btn)
+
+        publish_btn = QPushButton("publish all cams", bar)
         publish_btn.setStyleSheet(style.TOOLBAR_BUTTON)
-        publish_btn.clicked.connect(self.publish_all)
+        publish_btn.clicked.connect(self.publish_all_shot_cameras)
         row.addWidget(publish_btn)
         return bar
 
@@ -364,13 +379,61 @@ class PrevisPanel(MayaQWidgetDockableMixin, QWidget):  # type: ignore[misc]
         shots[index], shots[new_index] = shots[new_index], shots[index]
         self._persist()
 
-    def publish_shot(self, shot_id: str) -> None:
+    def break_out_shot(self, shot_id: str) -> None:
         shot = self._state.find_shot(shot_id)
-        if shot is None or not shot.shotgrid_code:
+        if shot is None:
+            return
+        if not shot.shotgrid_code:
             MessageDialog(
                 self,
-                "Assign a ShotGrid code to this shot before publishing.",
-                "Publish",
+                "Assign a ShotGrid code to this shot before breaking out.",
+                "Break Out to RLO",
+            ).exec_()
+            return
+        if not self._confirm_break_out([shot]):
+            return
+        try:
+            conn = self._conn()
+            shot_range = playback.compute_shot_ranges(self._state)[shot.id]
+            sg_shot = conn.get_shot(code=shot.shotgrid_code)
+            breakout.break_out_shot(shot, sg_shot, shot_range, conn)
+        except Exception as exc:
+            log.exception("break_out_shot failed")
+            MessageDialog(self, str(exc), "Break Out Failed").exec_()
+            return
+        self._persist()
+
+    def break_out_all(self) -> None:
+        paired = [s for s in self._state.shots if s.shotgrid_code]
+        if not paired:
+            MessageDialog(
+                self,
+                "No shots have a ShotGrid code yet. Assign codes before breaking out.",
+                "Break Out to RLO",
+            ).exec_()
+            return
+        if not self._confirm_break_out(paired):
+            return
+        try:
+            paths = breakout.break_out_sequence(self._state, self._conn())
+        except Exception as exc:
+            log.exception("break_out_all failed")
+            MessageDialog(self, str(exc), "Break Out Failed").exec_()
+            return
+        MessageDialog(
+            self, f"Broke out {len(paths)} shot(s).", "Break Out to RLO"
+        ).exec_()
+        self._persist()
+
+    def publish_shot_camera(self, shot_id: str) -> None:
+        shot = self._state.find_shot(shot_id)
+        if shot is None:
+            return
+        if not shot.shotgrid_code:
+            MessageDialog(
+                self,
+                "Assign a ShotGrid code to this shot before publishing its camera.",
+                "Publish Shot Camera",
             ).exec_()
             return
         try:
@@ -382,8 +445,14 @@ class PrevisPanel(MayaQWidgetDockableMixin, QWidget):  # type: ignore[misc]
             return
         self._persist()
 
-    def publish_all(self) -> None:
-        if not self._state.shots:
+    def publish_all_shot_cameras(self) -> None:
+        paired = [s for s in self._state.shots if s.shotgrid_code]
+        if not paired:
+            MessageDialog(
+                self,
+                "No shots have a ShotGrid code yet. Assign codes before publishing.",
+                "Publish Shot Cameras",
+            ).exec_()
             return
         try:
             paths = publish.publish_all_shot_cameras(self._state, self._conn())
@@ -391,8 +460,38 @@ class PrevisPanel(MayaQWidgetDockableMixin, QWidget):  # type: ignore[misc]
             log.exception("publish_all_shot_cameras failed")
             MessageDialog(self, str(exc), "Publish Failed").exec_()
             return
-        QMessageBox.information(self, "Publish", f"Published {len(paths)} shot(s).")
+        MessageDialog(
+            self, f"Published {len(paths)} shot camera(s).", "Publish Shot Cameras"
+        ).exec_()
         self._persist()
+
+    def _confirm_break_out(self, shots: list[PrevisShot]) -> bool:
+        """Confirm a destructive re-bake, flagging any RLO files it would overwrite."""
+        prod_root = get_production_path()
+        overwrites = [
+            s.shotgrid_code
+            for s in shots
+            if s.shotgrid_code and status.rlo_path(s.shotgrid_code, prod_root).exists()
+        ]
+        plural = "s" if len(shots) != 1 else ""
+        body = (
+            f"Break out {len(shots)} shot{plural} to RLO? "
+            "This re-bakes the scene from scratch."
+        )
+        if overwrites:
+            body += "\n\nOverwrites existing RLO files:\n" + "\n".join(
+                f"  • {code}" for code in overwrites
+            )
+        return bool(
+            MessageDialogCustomButtons(
+                self,
+                body,
+                "Break Out to RLO",
+                has_cancel_button=True,
+                ok_name="Break Out",
+                cancel_name="Cancel",
+            ).exec_()
+        )
 
     # ---------- helpers ----------
 
