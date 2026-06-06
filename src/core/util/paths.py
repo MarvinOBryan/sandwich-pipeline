@@ -114,7 +114,7 @@ def get_documentation_path(page: str | None = None) -> str:
 
 
 def get_previs_path() -> Path:
-    return get_production_path().parent / "previs"
+    return get_production_path() / "previs"
 
 
 def get_production_path() -> Path:

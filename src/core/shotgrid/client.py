@@ -848,6 +848,35 @@ class ShotGrid:
         invalidate(self)
         return self.reload(asset)
 
+    # ---- writes: shots -----------------------------------------------------
+
+    def set_shot_cut_range(self, shot: Shot, *, cut_in: int, cut_out: int) -> Shot:
+        """Stamp `cut_in`/`cut_out` and the derived `cut_duration` onto `shot`.
+
+        Used by the previs break-out, which fixes a shot's frame range at bake
+        time. `cut_duration` is always `cut_out - cut_in + 1`; it is written
+        alongside so ShotGrid stays internally consistent.
+
+        Raises:
+            ValueError: `cut_out` precedes `cut_in`.
+            ShotGridWriteError: ShotGrid rejected the update.
+        """
+        if cut_out < cut_in:
+            raise ValueError(f"cut_out ({cut_out}) precedes cut_in ({cut_in}).")
+        payload = {
+            "sg_cut_in": cut_in,
+            "sg_cut_out": cut_out,
+            "sg_cut_duration": cut_out - cut_in + 1,
+        }
+        _write_or_raise(
+            lambda: self._sg.update("Shot", shot.id, payload),
+            entity_type="Shot",
+            entity_id=shot.id,
+            field="sg_cut_in",
+        )
+        invalidate(self)
+        return self.reload(shot)
+
     # ---- versions ----------------------------------------------------------
 
     def create_shot_version(

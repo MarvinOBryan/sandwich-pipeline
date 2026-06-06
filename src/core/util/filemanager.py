@@ -140,6 +140,14 @@ class FileManager(metaclass=ABCMeta):
         """Execute additional code after opening or creating a scene"""
         pass
 
+    def _compute_entity_path(self, entity: SGEntity) -> Path:
+        """Working-files directory for `entity`. Override for non-standard layouts."""
+        return get_production_path() / entity.path / self._get_subpath()
+
+    def _filter_entities(self, entities: list[SGEntity]) -> list[SGEntity]:
+        """Restrict the open-file dialog's entity list. Default: no filter."""
+        return entities
+
     def _prompt_create_if_not_exist(self, path: Path) -> bool:
         """Returns True if safe to proceed, False otherwise"""
         if not path.exists():
@@ -160,13 +168,10 @@ class FileManager(metaclass=ABCMeta):
         if not self._check_unsaved_changes():
             return
         if not self._override_entity_code:
-            entity_names = sorted(
-                e.code or ""
-                for e in _find_entities_for_type(
-                    self._conn, self._entity_type, roots_only=True
-                )
-                if e.code
+            entities = self._filter_entities(
+                _find_entities_for_type(self._conn, self._entity_type, roots_only=True)
             )
+            entity_names = sorted(e.code or "" for e in entities if e.code)
             open_file_dialog = OpenFileDialog(
                 self._main_window,
                 entity_names,
@@ -200,7 +205,7 @@ class FileManager(metaclass=ABCMeta):
             ).exec_()
             return
 
-        entity_path = get_production_path() / entity.path / self._get_subpath()
+        entity_path = self._compute_entity_path(entity)
         if not self._prompt_create_if_not_exist(entity_path):
             return
 

@@ -4,6 +4,9 @@
 **/.venv/
 **/.zed/
 
+# Local-only throwaway prototypes (e.g. risk-mitigation spikes)
+scratch/
+
 # Ignore temporary files
 **/__pycache__/
 **/__private/

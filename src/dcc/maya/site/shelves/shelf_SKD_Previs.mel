@@ -1,4 +1,4 @@
-global proc shelf_SKD_RLO () {
+global proc shelf_SKD_Previs () {
     global string $gBuffStr;
     global string $gBuffStr0;
     global string $gBuffStr1;
@@ -14,18 +14,18 @@ global proc shelf_SKD_RLO () {
         -manage 1
         -visible 1
         -preventOverride 0
-        -annotation "Open RLO File"
+        -annotation "Open or create a previs file for a sequence"
         -enableBackground 0
         -backgroundColor 0 0 0
         -highlightColor 0.321569 0.521569 0.65098
         -align "center"
-        -label "OpenRLO"
+        -label "Open Previs"
         -labelOffset 0
         -rotation 0
         -flipX 0
         -flipY 0
         -useAlpha 1
-        -imageOverlayLabel "Open RLO"
+        -imageOverlayLabel "Open Previs"
         -overlayLabelColor 2.624876 0.801436 0.012446
         -overlayLabelBackColor 0.227129 0.227129 0.227129 0.5
         -image "openLoadGeneric.png"
@@ -33,7 +33,7 @@ global proc shelf_SKD_RLO () {
         -style "iconOnly"
         -marginWidth 0
         -marginHeight 1
-        -command "from dcc.maya.shotfile import MRLOShotFileManager; fm = MRLOShotFileManager(); fm.open_file()"
+        -command "from dcc.maya.previs.file_manager import MPrevisFileManager; MPrevisFileManager().open_file()"
         -sourceType "python"
         -commandRepeatable 1
         -flat 1
@@ -48,26 +48,26 @@ global proc shelf_SKD_RLO () {
         -manage 1
         -visible 1
         -preventOverride 0
-        -annotation "Create a manual version of the current RLO scene"
+        -annotation "Open the previs sequencer panel"
         -enableBackground 0
         -backgroundColor 0 0 0
         -highlightColor 0.321569 0.521569 0.65098
         -align "center"
-        -label "Save Version"
+        -label "Open Previs Panel"
         -labelOffset 0
         -rotation 0
         -flipX 0
         -flipY 0
         -useAlpha 1
-        -imageOverlayLabel "Save Version"
+        -imageOverlayLabel "Previs Panel"
         -overlayLabelColor 2.624876 0.801436 0.012446
         -overlayLabelBackColor 0.227129 0.227129 0.227129 0.5
-        -image "save.png"
-        -image1 "save.png"
+        -image "menuIconWindow.png"
+        -image1 "menuIconWindow.png"
         -style "iconOnly"
         -marginWidth 0
         -marginHeight 1
-        -command "from dcc.maya.shotfile import MRLOShotFileManager; MRLOShotFileManager().save_version_for_current_scene()"
+        -command "from dcc.maya.previs import panel; panel.launch()"
         -sourceType "python"
         -commandRepeatable 1
         -flat 1
@@ -82,26 +82,26 @@ global proc shelf_SKD_RLO () {
         -manage 1
         -visible 1
         -preventOverride 0
-        -annotation "Open version history for the current RLO scene"
+        -annotation "Previs Playblasting"
         -enableBackground 0
         -backgroundColor 0 0 0
         -highlightColor 0.321569 0.521569 0.65098
         -align "center"
-        -label "Version History"
+        -label "Previs Playblast"
         -labelOffset 0
         -rotation 0
         -flipX 0
         -flipY 0
         -useAlpha 1
-        -imageOverlayLabel "Versions"
+        -imageOverlayLabel "Previs Playblast"
         -overlayLabelColor 2.624876 0.801436 0.012446
         -overlayLabelBackColor 0.227129 0.227129 0.227129 0.5
-        -image "default.svg"
-        -image1 "default.svg"
+        -image "playblast.png"
+        -image1 "playblast.png"
         -style "iconOnly"
         -marginWidth 0
         -marginHeight 1
-        -command "from dcc.maya.shotfile import MRLOShotFileManager; MRLOShotFileManager().open_version_browser()"
+        -command "from dcc.maya.playblast import PrevisPlayblastDialog; from dcc.maya.runtime import get_main_qt_window; PrevisPlayblastDialog(get_main_qt_window()).show();"
         -sourceType "python"
         -commandRepeatable 1
         -flat 1
@@ -116,18 +116,18 @@ global proc shelf_SKD_RLO () {
         -manage 1
         -visible 1
         -preventOverride 0
-        -annotation "Publish the current scene's camera for editorial"
+        -annotation "Publish every shot's primary camera to USD"
         -enableBackground 0
         -backgroundColor 0 0 0
         -highlightColor 0.321569 0.521569 0.65098
         -align "center"
-        -label "Publish Camera"
+        -label "Publish Sequence"
         -labelOffset 0
         -rotation 0
         -flipX 0
         -flipY 0
         -useAlpha 1
-        -imageOverlayLabel "Publish Camera"
+        -imageOverlayLabel "Publish Cams"
         -overlayLabelColor 2.624876 0.801436 0.012446
         -overlayLabelBackColor 0.227129 0.227129 0.227129 0.5
         -image "camera.closed.svg"
@@ -135,7 +135,7 @@ global proc shelf_SKD_RLO () {
         -style "iconOnly"
         -marginWidth 0
         -marginHeight 1
-        -command "from dcc.maya.publish import CameraPublisher; CameraPublisher().publish();"
+        -command "from dcc.maya.previs.publish import publish_all_shot_cameras_interactive; publish_all_shot_cameras_interactive()"
         -sourceType "python"
         -commandRepeatable 1
         -flat 1
