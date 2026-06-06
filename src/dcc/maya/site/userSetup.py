@@ -16,8 +16,8 @@ def main():
     # Apply the pipeline OCIO viewport default
     from core.color import DEFAULT_VIEW, DISPLAY
 
-    mc.colorManagementPrefs(e=True, cmEnabled=True)
-    mc.colorManagementPrefs(e=True, viewTransformName=f"{DEFAULT_VIEW} ({DISPLAY})")
+    mc.colorManagementPrefs(edit=True, cmEnabled=True)
+    mc.colorManagementPrefs(edit=True, viewTransformName=f"{DEFAULT_VIEW} ({DISPLAY})")
 
     from core.util.paths import get_production_path
 

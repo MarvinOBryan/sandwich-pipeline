@@ -24,8 +24,10 @@ from core.color import DEFAULT_VIEW, DISPLAY
 @persistent
 def _apply_color_defaults(_dummy) -> None:
     for scene in bpy.data.scenes:
-        scene.display_settings.display_device = DISPLAY
-        scene.view_settings.view_transform = DEFAULT_VIEW
+        # These enums are populated at runtime from the loaded OCIO config, so
+        # the static bpy stubs (Blender's built-in items only) reject our values.
+        scene.display_settings.display_device = DISPLAY  # type: ignore
+        scene.view_settings.view_transform = DEFAULT_VIEW  # type: ignore
         scene.render.image_settings.color_management = "FOLLOW_SCENE"
 
 

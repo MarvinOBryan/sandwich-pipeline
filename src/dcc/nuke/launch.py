@@ -25,7 +25,6 @@ class NukeLauncher(Launcher):
         this_path = Path(__file__).resolve()
         # this_path = `<repo>/src/dcc/nuke/launch.py`
         src_path = this_path.parents[2]
-        repo_root = src_path.parent
 
         system = platform.system()
 
