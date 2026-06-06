@@ -14,16 +14,15 @@ if TYPE_CHECKING:
 
     RT = typing.TypeVar("RT")  # return type
 
-from env import Executables
-
 from core import telemetry
+from core.util import silent_startupinfo
+from core.util.paths import get_repo_root
 from dcc.substance_painter.util.progress import (
     PublishProgressCallback,
     PublishProgressUpdate,
     PublishStage,
 )
-from core.util import silent_startupinfo
-from core.util.paths import get_repo_root
+from env import Executables
 
 log = logging.getLogger(__name__)
 
@@ -137,9 +136,8 @@ class TexConverter:
                 file.unlink()
 
         @self._debug_out
-        def tex_cmd(img: str, is_color: bool = False) -> list[str]:
-            # Use oiiotool for color maps. We intentionally avoid ACES conversions
-            # here; Substance exports should already be in sRGB for color maps.
+        def tex_cmd(img: str, is_color: bool) -> list[str]:
+            # Colorspace is set by the `pxrtexture` node (`filename_colorspace`)
             # fmt: off
             return [
                 str(Executables.oiiotool),
@@ -159,16 +157,16 @@ class TexConverter:
 
         @self._debug_out
         def b2r_cmd(img: str) -> list[str]:
+            # OIIO's `-obump` writes a 6-channel slope texture (first and
+            # second moments of the bump slopes) consumable by
+            # `PxrBumpRoughness`. `bumpformat=height` matches the EXR
+            # height map produced by the `norm2height` pre-pass.
             # fmt: off
             return [
-                str(Executables.txmake),
-                "-resize", "round-",
-                "-mode", "periodic",
-                "-filter", "box",
-                "-mipfilter", "box",
-                "-bumprough", "2", "0", "0", "0", "0", "1",
-                "-newer",
+                str(Executables.oiiotool),
                 img,
+                "--planarconfig", "separate",
+                "-obump:bumpformat=height",
                 f"{str(self.tex_path / Path(img).stem)}.b2r",
             ]
             # fmt: on
@@ -211,11 +209,17 @@ class TexConverter:
                     pre_cmdlines.append(norm2height(img))
                     cmdlines.append(b2r_cmd(img.replace(".pre-b2r", "")))
                 else:
-                    cmdlines.append(tex_cmd(img, ("Color" in img or "Emissive" in img)))
+                    cmdlines.append(
+                        tex_cmd(
+                            img,
+                            is_color=("Color" in img or "Emissive" in img),
+                        )
+                    )
 
         self._wait_and_check_cmds(
             pre_cmdlines, batch_size=self.batch_size, skip_check=True
         )
+
         total_tex = len(cmdlines)
         if total_tex <= 0:
             self._report_progress(

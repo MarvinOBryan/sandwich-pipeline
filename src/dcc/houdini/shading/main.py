@@ -7,10 +7,10 @@ from pathlib import Path
 from typing import Any, cast
 
 import hou
-from env_sg import DB_Config
 
 from core.shotgrid import Asset, ShotGrid
 from core.struct.material import MaterialInfo
+from env_sg import DB_Config
 
 from . import variants
 
@@ -349,12 +349,10 @@ class MatlibSpecBuilder:
     @staticmethod
     def _extension_rank(map_name: str, extension: str) -> int:
         ext = extension.lower()
-        if map_name == "Normal":
-            order = ("b2r", "tex", "exr", "png", "jpg", "jpeg")
-        elif map_name in _PREVIEW_MAPS:
-            order = ("jpeg", "jpg", "png", "exr", "tex", "b2r")
+        if map_name in _PREVIEW_MAPS:
+            order = ("jpeg", "jpg", "png", "exr", "tex")
         else:
-            order = ("tex", "exr", "png", "jpg", "jpeg", "b2r")
+            order = ("tex", "exr", "png", "jpg", "jpeg")
         try:
             return order.index(ext)
         except ValueError:
@@ -862,9 +860,10 @@ class MatlibNodeBuilder:
         if not path:
             return
         self._set_parm_if_exists(node, "filename", path)
-        if is_color:
-            # OCIO alias from sandwich-v01 config (resolves to "sRGB - Texture")
-            self._set_parm_if_exists(node, "filename_colorspace", "srgb_texture")
+        # Aliases must be keys in `rman_color_config_<version>.json` so the
+        # pxrtexture's `filename_colorspace` dropdown resolves.
+        alias = "srgb_texture" if is_color else "data"
+        self._set_parm_if_exists(node, "filename_colorspace", alias)
 
     @staticmethod
     def _set_parm_if_exists(node: hou.Node, parm_name: str, value) -> None:

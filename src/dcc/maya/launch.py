@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import typing
 
+from core.color import ocio_env_vars
 from core.util.paths import (
     get_production_path,
     get_rig_build_path,
@@ -82,7 +83,7 @@ class MayaLauncher(Launcher):
                     str(third_party / "studiolibrary/src"),
                 ]
             ),
-            "OCIO": str(repo_root / "resources/ocio/sandwich-v01/config.ocio"),
+            **ocio_env_vars(),
             "QT_FONT_DPI": os.getenv("MAYA_FONT_DPI") if system == "Linux" else None,
             "QT_PLUGIN_PATH": None,
             # Configure Asset Resolver

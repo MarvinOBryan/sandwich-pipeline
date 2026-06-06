@@ -247,6 +247,7 @@ loptoolutils.referenceTestAsset(node, asset_name)]]></script>
     <memberToolshelf name="RenderManRIS"/>
     <memberToolshelf name="RenderMan26"/>
     <memberToolshelf name="testing"/>
+    <memberToolshelf name="labs_toolset"/>
   </shelfSet>
 
   <toolshelf name="testing" label="Testing">

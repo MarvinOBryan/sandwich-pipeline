@@ -13,6 +13,12 @@ def main():
         if plugin not in pluginInfo:
             mc.loadPlugin(plugin)
 
+    # Apply the pipeline OCIO viewport default
+    from core.color import DEFAULT_VIEW, DISPLAY
+
+    mc.colorManagementPrefs(edit=True, cmEnabled=True)
+    mc.colorManagementPrefs(edit=True, viewTransformName=f"{DEFAULT_VIEW} ({DISPLAY})")
+
     from core.util.paths import get_production_path
 
     # set workspace
@@ -25,6 +31,7 @@ def main():
 
     # register USD Export chaser
     import mayaUsd.lib as mayaUsdLib  # type: ignore[import-not-found]
+
     from dcc.maya.publish import ExportChaser
 
     mayaUsdLib.ExportChaser.Register(ExportChaser, ExportChaser.ID)
