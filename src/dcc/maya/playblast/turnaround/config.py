@@ -43,7 +43,10 @@ class TurnaroundPass:
     wireframe_on_shaded: bool = False
 
 
-DEFAULT_PASSES = (TurnaroundPass(Elevation.THREE_QUARTER, False),)
+DEFAULT_PASSES = (
+    TurnaroundPass(Elevation.THREE_QUARTER, False),
+    TurnaroundPass(Elevation.THREE_QUARTER, True),
+)
 
 
 @dataclass(frozen=True)

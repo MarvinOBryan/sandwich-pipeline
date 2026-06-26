@@ -9,16 +9,18 @@ from pathlib import Path
 from typing import Iterable
 
 import maya.cmds as mc
-from mayacapture.capture import capture  # type: ignore[import-not-found]
-from Qt import QtWidgets
-
 from core.hud import (
     ARTIST,
     HudContent,
     apply_hud,
     labeled_line,
 )
+from core.playblast.encoding import build_image_input_chain, encode_movie
 from core.ui.progress import progress_scope
+from core.util.users import resolve_artist_display_name
+from mayacapture.capture import capture  # type: ignore[import-not-found]
+from Qt import QtWidgets
+
 from dcc.maya.playblast.turnaround.config import (
     Elevation,
     TurnaroundPass,
@@ -36,8 +38,6 @@ from dcc.maya.playblast.turnaround.framing import (
     swept_profile,
 )
 from dcc.maya.util.selection import maintain_selection
-from core.playblast.encoding import build_image_input_chain, encode_movie
-from core.util.users import resolve_artist_display_name
 
 # Turnaround-specific HUD labels. Cross-DCC labels (Artist, ...) live in
 # :mod:`core.hud`.
@@ -46,9 +46,8 @@ _LABEL_POINTS = "Points"
 
 log = logging.getLogger(__name__)
 
-# Flat near-black: dark enough to make a clay-shaded asset pop without crushing
-# its shadowed side, with no gradient to distract from form review.
-BACKGROUND = (0.12, 0.12, 0.13)
+# Flat charcoal
+BACKGROUND = (0.161, 0.161, 0.161)
 
 
 class MTurnaroundPlayblaster:

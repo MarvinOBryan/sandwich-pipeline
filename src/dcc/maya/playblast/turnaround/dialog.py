@@ -281,6 +281,7 @@ class AssetTurnaroundDialog(ButtonPair, QtWidgets.QMainWindow):
                 passes_layout.addWidget(checkbox, row, column)
 
         self._pass_checkboxes[(Elevation.THREE_QUARTER, False)].setChecked(True)
+        self._pass_checkboxes[(Elevation.THREE_QUARTER, True)].setChecked(True)
         self._main_layout.addWidget(passes_group)
 
     def _selected_passes(self) -> tuple[TurnaroundPass, ...]:
