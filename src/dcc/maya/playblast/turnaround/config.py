@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Iterable
 
@@ -16,6 +17,33 @@ DEFAULT_HEIGHT = 1080
 DEFAULT_FRAMES_PER_PASS = 96
 DEFAULT_FOCAL_LENGTH = 50.0
 DEFAULT_CAMERA_PADDING = 1.25
+
+
+class Elevation(float, Enum):
+    """Camera tilt above level, in degrees, for a turnaround pass."""
+
+    LEVEL = 0.0
+    THREE_QUARTER = 30.0
+    TOP = 90.0
+
+    @property
+    def label(self) -> str:
+        return {
+            Elevation.LEVEL: "Level",
+            Elevation.THREE_QUARTER: "Three-Quarter",
+            Elevation.TOP: "Top",
+        }[self]
+
+
+@dataclass(frozen=True)
+class TurnaroundPass:
+    """One 360 deg orbit clip at a fixed elevation and shading mode."""
+
+    elevation: Elevation
+    wireframe_on_shaded: bool = False
+
+
+DEFAULT_PASSES = (TurnaroundPass(Elevation.THREE_QUARTER, False),)
 
 
 @dataclass(frozen=True)
@@ -44,16 +72,13 @@ class TurnaroundPlayblastConfig:
     asset_label: str
     output_paths: dict[FFmpegPreset, list[str | Path]]
     review_roots: tuple[str, ...]
+    passes: tuple[TurnaroundPass, ...] = DEFAULT_PASSES
     width: int = DEFAULT_WIDTH
     height: int = DEFAULT_HEIGHT
     frames_per_pass: int = DEFAULT_FRAMES_PER_PASS
     frame_rate: int = Playblaster.fps
     focal_length: float = DEFAULT_FOCAL_LENGTH
     camera_padding: float = DEFAULT_CAMERA_PADDING
-    use_default_material: bool = True
-    use_shadows: bool = True
-    use_anti_aliasing: bool = True
-    include_wireframe_pass: bool = True
 
 
 def resolve_turnaround_review_roots() -> TurnaroundReviewRoots:
@@ -174,7 +199,10 @@ __all__ = [
     "DEFAULT_FOCAL_LENGTH",
     "DEFAULT_FRAMES_PER_PASS",
     "DEFAULT_HEIGHT",
+    "DEFAULT_PASSES",
     "DEFAULT_WIDTH",
+    "Elevation",
+    "TurnaroundPass",
     "TurnaroundPlayblastConfig",
     "TurnaroundReviewRoots",
     "resolve_turnaround_review_roots",
