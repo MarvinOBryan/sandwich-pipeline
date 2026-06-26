@@ -23,7 +23,6 @@ from dcc.maya.playblast.shot.config import (
     SaveLocation,
 )
 from dcc.maya.playblast.shot.dialog import MPlayblastDialog
-from dcc.maya.shotfile.anim import _find_usd_shotcam
 
 log = logging.getLogger(__name__)
 
@@ -85,6 +84,10 @@ class AnimPlayblastDialog(MPlayblastDialog):
 
     def _get_shot_camera_path(self) -> str | None:
         """Resolve the USD shot camera in Maya, supporting both legacy and current hierarchies."""
+        # Imported lazily: a module-level import couples playblast's import to the whole
+        # shotfile package and makes a latent circular import order-dependent.
+        from dcc.maya.shotfile.anim import _find_usd_shotcam
+
         camera_path = _find_usd_shotcam()
         if camera_path:
             return camera_path

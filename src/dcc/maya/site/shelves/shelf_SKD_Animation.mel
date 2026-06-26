@@ -487,7 +487,7 @@ global proc shelf_SKD_Animation () {
         -style "iconOnly"
         -marginWidth 0
         -marginHeight 1
-        -command "import pin_shift; pin_shift.run();"
+        -command "import dcc.maya.pin_shift; dcc.maya.pin_shift.run();"
         -sourceType "python"
         -commandRepeatable 1
         -flat 1

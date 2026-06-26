@@ -94,6 +94,16 @@ def hotkey_set(name: str):
         cmds.hotkeySet(prev_set, edit=True, current=True)
 
 
+@contextmanager
+def undo_chunk(name: str):
+    """Context manager that groups every scene edit in the block into one named undo entry, so a single Ctrl-Z reverts the whole operation."""
+    cmds.undoInfo(openChunk=True, chunkName=name)
+    try:
+        yield
+    finally:
+        cmds.undoInfo(closeChunk=True)
+
+
 def name_command_has_hotkey(name_command: str) -> bool:
     """Returns True if the given nameCommand has any hotkey bound to it."""
     try:
