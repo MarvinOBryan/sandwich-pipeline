@@ -13,6 +13,9 @@ PIVOT_LOCATOR_NAME = "turnaround_pivot"
 
 _MIN_EXTENT = 0.001
 
+# Height bands used to measure how wide the asset sweeps at each level.
+_PROFILE_BANDS = 64
+
 
 @dataclass(frozen=True)
 class SurfaceSamples:
@@ -24,12 +27,17 @@ class SurfaceSamples:
 
 
 @dataclass(frozen=True)
-class CylinderBound:
-    """Upright cylinder enclosing the surface, measured about the spin axis."""
+class SweptProfile:
+    """How wide the asset sweeps at each height as it spins about the axis.
 
-    radius: float
-    height: float
+    `bands` holds `(height_offset_from_center, swept_radius)` pairs. Projecting
+    this profile frames rounded or tapered assets tighter than a uniform
+    cylinder would, which is where the wasted space at a tilted view comes from.
+    The asset is centered on `center_y`; the camera aims there.
+    """
+
     center_y: float
+    bands: tuple[tuple[float, float], ...]
 
 
 def sample_review_surface(roots: tuple[str, ...]) -> SurfaceSamples:
@@ -92,35 +100,45 @@ def area_weighted_centroid(samples: SurfaceSamples) -> tuple[float, float]:
     return (x / total_area, z / total_area)
 
 
-def cylinder_bound(
-    samples: SurfaceSamples, pivot: tuple[float, float]
-) -> CylinderBound:
-    """Enclose the surface in an upright cylinder centered on the spin axis."""
+def swept_profile(samples: SurfaceSamples, pivot: tuple[float, float]) -> SweptProfile:
+    """Measure the swept radius in each height band about the spin axis."""
 
     pivot_x, pivot_z = pivot
-    radius = max(
-        (math.hypot(x - pivot_x, z - pivot_z) for x, _, z in samples.points),
-        default=_MIN_EXTENT,
-    )
     min_y = min(y for _, y, _ in samples.points)
     max_y = max(y for _, y, _ in samples.points)
-    return CylinderBound(
-        radius=max(radius, _MIN_EXTENT),
-        height=max(max_y - min_y, _MIN_EXTENT),
-        center_y=(min_y + max_y) * 0.5,
+    center_y = (min_y + max_y) * 0.5
+    span = max(max_y - min_y, _MIN_EXTENT)
+
+    band_radius = [0.0] * _PROFILE_BANDS
+    for x, y, z in samples.points:
+        index = int((y - min_y) / span * (_PROFILE_BANDS - 1))
+        band_radius[index] = max(
+            band_radius[index], math.hypot(x - pivot_x, z - pivot_z)
+        )
+
+    band_height = span / _PROFILE_BANDS
+    bands = tuple(
+        (min_y + (index + 0.5) * band_height - center_y, radius)
+        for index, radius in enumerate(band_radius)
+        if radius > 0.0
     )
+    return SweptProfile(center_y=center_y, bands=bands or ((0.0, _MIN_EXTENT),))
 
 
-def projected_extents(bound: CylinderBound, elevation: float) -> tuple[float, float]:
-    """The cylinder's on-screen width and height seen from a tilted camera.
+def projected_frame(profile: SweptProfile, elevation: float) -> tuple[float, float]:
+    """On-screen width and height of the swept silhouette.
 
-    `elevation` is the camera's angle above level, in radians.
+    `elevation` is the camera's angle above level, in radians. Width is the swept
+    diameter; height is the silhouette's vertical extent about the spin center.
     """
 
-    width = 2.0 * bound.radius
-    height = bound.height * math.cos(elevation) + 2.0 * bound.radius * math.sin(
-        elevation
-    )
+    cos_e, sin_e = math.cos(elevation), math.sin(elevation)
+    max_radius = max(radius for _, radius in profile.bands)
+    top = max(y * cos_e + radius * sin_e for y, radius in profile.bands)
+    bottom = min(y * cos_e - radius * sin_e for y, radius in profile.bands)
+
+    width = 2.0 * max_radius
+    height = max(top - bottom, _MIN_EXTENT)
     return (width, height)
 
 
@@ -165,13 +183,13 @@ def _mean_xz(points: tuple[Vec3, ...]) -> tuple[float, float]:
 
 
 __all__ = [
-    "CylinderBound",
     "PIVOT_LOCATOR_NAME",
     "SurfaceSamples",
+    "SweptProfile",
     "area_weighted_centroid",
-    "cylinder_bound",
     "fit_distance",
     "pivot_override",
-    "projected_extents",
+    "projected_frame",
     "sample_review_surface",
+    "swept_profile",
 ]

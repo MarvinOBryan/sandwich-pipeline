@@ -27,13 +27,13 @@ from dcc.maya.playblast.turnaround.config import (
     _node_uuid,
 )
 from dcc.maya.playblast.turnaround.framing import (
-    CylinderBound,
+    SweptProfile,
     area_weighted_centroid,
-    cylinder_bound,
     fit_distance,
     pivot_override,
-    projected_extents,
+    projected_frame,
     sample_review_surface,
+    swept_profile,
 )
 from dcc.maya.util.selection import maintain_selection
 from core.playblast.encoding import build_image_input_chain, encode_movie
@@ -46,8 +46,9 @@ _LABEL_POINTS = "Points"
 
 log = logging.getLogger(__name__)
 
-BACKGROUND_TOP = (0.42, 0.44, 0.47)
-BACKGROUND_BOTTOM = (0.17, 0.17, 0.18)
+# Flat near-black: dark enough to make a clay-shaded asset pop without crushing
+# its shadowed side, with no gradient to distract from form review.
+BACKGROUND = (0.12, 0.12, 0.13)
 
 
 class MTurnaroundPlayblaster:
@@ -66,7 +67,7 @@ class MTurnaroundPlayblaster:
 
         samples = sample_review_surface(config.review_roots)
         pivot = pivot_override() or area_weighted_centroid(samples)
-        bound = cylinder_bound(samples, pivot)
+        profile = swept_profile(samples, pivot)
 
         steps = [_pass_label(index, p) for index, p in enumerate(config.passes)]
         steps += ["Assembling frames", "Encoding movies"]
@@ -101,7 +102,7 @@ class MTurnaroundPlayblaster:
                         _frame_camera_for_pass(
                             camera_transform,
                             camera_shape,
-                            bound=bound,
+                            profile=profile,
                             pivot=pivot,
                             elevation=turnaround_pass.elevation,
                             aspect=config.width / config.height,
@@ -140,9 +141,11 @@ class MTurnaroundPlayblaster:
             end_frame=config.frames_per_pass,
             format="image",
             compression="png",
-            # Keep this capture on-screen. `mayacapture` does not expose
-            # Maya's `offScreenViewportUpdate` flag, and the topology overlay
-            # needs a live model panel draw to be reliable.
+            # Keep this capture on-screen. Off-screen (`off_screen=True`) renders
+            # an empty frame here: Viewport 2.0's hidden buffer does not draw the
+            # isolated turnaround geometry on Linux, and it also drops the
+            # wireframe-on-shaded overlay. The shot and previs playblasters get
+            # away with off-screen because they render the whole scene unisolated.
             off_screen=False,
             show_ornaments=False,
             overwrite=True,
@@ -150,9 +153,8 @@ class MTurnaroundPlayblaster:
             viewer=False,
             isolate=list(review_roots),
             display_options={
-                "displayGradient": True,
-                "backgroundTop": BACKGROUND_TOP,
-                "backgroundBottom": BACKGROUND_BOTTOM,
+                "displayGradient": False,
+                "background": BACKGROUND,
             },
             viewport_options={
                 "displayAppearance": "smoothShaded",
@@ -358,14 +360,14 @@ def _frame_camera_for_pass(
     camera_transform: str,
     camera_shape: str,
     *,
-    bound: CylinderBound,
+    profile: SweptProfile,
     pivot: tuple[float, float],
     elevation: Elevation,
     aspect: float,
     padding: float,
 ) -> None:
     phi = math.radians(float(elevation))
-    width, height = projected_extents(bound, phi)
+    width, height = projected_frame(profile, phi)
     distance = fit_distance(
         width,
         height,
@@ -374,7 +376,7 @@ def _frame_camera_for_pass(
         padding=padding,
     )
 
-    aim = (pivot[0], bound.center_y, pivot[1])
+    aim = (pivot[0], profile.center_y, pivot[1])
     position = (
         aim[0],
         aim[1] + distance * math.sin(phi),
@@ -384,7 +386,7 @@ def _frame_camera_for_pass(
     # face the front of the asset toward the top of frame instead.
     world_up = (0.0, 0.0, -1.0) if elevation is Elevation.TOP else (0.0, 1.0, 0.0)
 
-    reach = max(bound.radius, bound.height * 0.5)
+    reach = max(width, height) * 0.5
     mc.setAttr(f"{camera_shape}.nearClipPlane", max(0.1, distance - 2.0 * reach))  # type: ignore
     mc.setAttr(f"{camera_shape}.farClipPlane", max(distance + 4.0 * reach, 1000.0))  # type: ignore
 
