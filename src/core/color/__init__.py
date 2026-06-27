@@ -24,10 +24,13 @@ def config_path() -> Path:
 
 
 def ocio_env_vars() -> dict[str, str]:
+    # Deliberately no OCIO_ACTIVE_VIEWS: a multi-value setting silently breaks
+    # Nuke 16.0v4's OCIODisplay view enumeration (the Viewer falls back to Raw
+    # only — Foundry bug 606354, fixed in 16.0v9).
     return {
         "OCIO": str(config_path()),
         "OCIO_ACTIVE_DISPLAYS": DISPLAY,
-        "OCIO_ACTIVE_VIEWS": ACTIVE_VIEWS,
+        # "OCIO_ACTIVE_VIEWS": ACTIVE_VIEWS,
         # Read by RenderMan to find `rman_color_config_<version>.json`.
         "RMAN_COLOR_CONFIG_DIR": str(config_dir()),
     }
