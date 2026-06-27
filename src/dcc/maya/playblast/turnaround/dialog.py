@@ -24,11 +24,13 @@ from dcc.maya.assetfile import read_asset_metadata
 from dcc.maya.playblast.shot.config import SaveLocation
 from dcc.maya.playblast.turnaround.config import (
     DEFAULT_FRAMES_PER_PASS,
+    Elevation,
+    TurnaroundPass,
     TurnaroundPlayblastConfig,
     resolve_turnaround_review_roots,
 )
 from dcc.maya.playblast.turnaround.playblaster import MTurnaroundPlayblaster
-from core.playblast import FFmpegPreset
+from core.playblast import FFmpegPreset, Playblaster
 from core.playblast.naming import next_versioned_basename
 from core.playblast.tempdir import resolve_playblast_tempdir
 from core.playblast.review import (
@@ -94,7 +96,7 @@ class AssetTurnaroundDialog(ButtonPair, QtWidgets.QMainWindow):
 
         self._build_header_section()
         self._build_targets_section()
-        self._build_viewport_options_section()
+        self._build_passes_section()
         self._build_buttons()
 
     def _build_header_section(self) -> None:
@@ -102,7 +104,7 @@ class AssetTurnaroundDialog(ButtonPair, QtWidgets.QMainWindow):
         title.setStyleSheet("font-size: 24px; font-weight: 700;")
         title.setAlignment(QtCore.Qt.AlignCenter)
 
-        subtitle = QLabel("Capture one shaded + wireframe turnaround review movie")
+        subtitle = QLabel("Capture an asset turnaround review movie")
         subtitle.setAlignment(QtCore.Qt.AlignCenter)
 
         self._main_layout.addWidget(title)
@@ -154,11 +156,9 @@ class AssetTurnaroundDialog(ButtonPair, QtWidgets.QMainWindow):
         )
         source_layout.addWidget(self._refresh_selection_button, 2, 2)
 
-        source_layout.addWidget(QLabel("Passes"), 3, 0)
+        source_layout.addWidget(QLabel("Summary"), 3, 0)
         self._passes_value = QLabel("-")
-        self._passes_value.setToolTip(
-            "Summary of the shaded and wireframe pass lengths."
-        )
+        self._passes_value.setToolTip("Number of selected passes and total runtime.")
         source_layout.addWidget(self._passes_value, 3, 1, 1, 2)
 
         source_layout.addWidget(QLabel("ShotGrid"), 4, 0)
@@ -263,51 +263,34 @@ class AssetTurnaroundDialog(ButtonPair, QtWidgets.QMainWindow):
         custom_path_layout.addWidget(browse_button)
         return custom_path_row
 
-    def _build_viewport_options_section(self) -> None:
-        options_group = QGroupBox("2. Viewport Options")
-        options_layout = QHBoxLayout(options_group)
+    def _build_passes_section(self) -> None:
+        passes_group = QGroupBox("2. Passes")
+        passes_layout = QGridLayout(passes_group)
 
-        self._use_default_material = self._build_option_checkbox(
-            "Use Default Material",
-            True,
-            "Use Maya's default material instead of scene shaders for a cleaner model review.",
-        )
-        options_layout.addWidget(self._use_default_material)
+        passes_layout.addWidget(QLabel("Elevation"), 0, 0)
+        passes_layout.addWidget(QLabel("Shaded"), 0, 1)
+        passes_layout.addWidget(QLabel("Wireframe"), 0, 2)
 
-        self._use_shadows = self._build_option_checkbox(
-            "Use Shadows",
-            True,
-            "Render Viewport 2.0 shadows in the shaded pass.",
-        )
-        options_layout.addWidget(self._use_shadows)
+        self._pass_checkboxes: dict[tuple[Elevation, bool], QCheckBox] = {}
+        for row, elevation in enumerate(Elevation, start=1):
+            passes_layout.addWidget(QLabel(elevation.label), row, 0)
+            for column, wireframe_on_shaded in enumerate((False, True), start=1):
+                checkbox = QCheckBox()
+                checkbox.toggled.connect(self._on_settings_changed)
+                self._pass_checkboxes[(elevation, wireframe_on_shaded)] = checkbox
+                passes_layout.addWidget(checkbox, row, column)
 
-        self._use_anti_aliasing = self._build_option_checkbox(
-            "Use Anti-aliasing",
-            True,
-            "Enable Viewport 2.0 multi-sample and SSAO settings.",
-        )
-        options_layout.addWidget(self._use_anti_aliasing)
+        self._pass_checkboxes[(Elevation.THREE_QUARTER, False)].setChecked(True)
+        self._pass_checkboxes[(Elevation.THREE_QUARTER, True)].setChecked(True)
+        self._main_layout.addWidget(passes_group)
 
-        self._include_wireframe_pass = self._build_option_checkbox(
-            "Include Wireframe Pass",
-            True,
-            "Append a second full turntable pass with wireframe-on-shaded enabled.",
-        )
-        options_layout.addWidget(self._include_wireframe_pass)
-
-        self._main_layout.addWidget(options_group)
-
-    def _build_option_checkbox(
-        self,
-        label: str,
-        checked: bool,
-        tooltip: str,
-    ) -> QCheckBox:
-        checkbox = QCheckBox(label)
-        checkbox.setChecked(checked)
-        checkbox.setToolTip(tooltip)
-        checkbox.toggled.connect(self._on_settings_changed)
-        return checkbox
+    def _selected_passes(self) -> tuple[TurnaroundPass, ...]:
+        selected: list[TurnaroundPass] = []
+        for elevation in Elevation:
+            for wireframe_on_shaded in (False, True):
+                if self._pass_checkboxes[(elevation, wireframe_on_shaded)].isChecked():
+                    selected.append(TurnaroundPass(elevation, wireframe_on_shaded))
+        return tuple(selected)
 
     def _build_buttons(self) -> None:
         self._init_buttons(has_cancel_button=True, ok_name="Create Turnaround")
@@ -418,10 +401,12 @@ class AssetTurnaroundDialog(ButtonPair, QtWidgets.QMainWindow):
         self._passes_value.setText(self._pass_summary_text())
 
     def _pass_summary_text(self) -> str:
-        shaded_summary = f"{DEFAULT_FRAMES_PER_PASS} shaded"
-        if self._include_wireframe_pass.isChecked():
-            return f"{shaded_summary} + {DEFAULT_FRAMES_PER_PASS} wireframe"
-        return shaded_summary
+        pass_count = len(self._selected_passes())
+        if not pass_count:
+            return "No passes selected"
+        seconds = pass_count * DEFAULT_FRAMES_PER_PASS / Playblaster.fps
+        noun = "pass" if pass_count == 1 else "passes"
+        return f"{pass_count} {noun} · ~{seconds:.0f}s"
 
     def _sync_custom_path_row_visibility(self) -> None:
         is_visible = self._is_custom_destination_selected()
@@ -463,6 +448,9 @@ class AssetTurnaroundDialog(ButtonPair, QtWidgets.QMainWindow):
                 "Select geometry for the turnaround, or make visible geometry "
                 "available in the scene."
             )
+
+        if not self._selected_passes():
+            return "Select at least one turnaround pass."
 
         if not self._selected_destination_locations():
             return "Select at least one save destination."
@@ -581,10 +569,7 @@ class AssetTurnaroundDialog(ButtonPair, QtWidgets.QMainWindow):
             asset_label=self._asset_display_name(),
             output_paths=self._paths_for_filename(output_name),
             review_roots=self._review_roots.roots,
-            use_default_material=self._use_default_material.isChecked(),
-            use_shadows=self._use_shadows.isChecked(),
-            use_anti_aliasing=self._use_anti_aliasing.isChecked(),
-            include_wireframe_pass=self._include_wireframe_pass.isChecked(),
+            passes=self._selected_passes(),
         )
 
     def _after_local_export(self, config: TurnaroundPlayblastConfig) -> list[str]:

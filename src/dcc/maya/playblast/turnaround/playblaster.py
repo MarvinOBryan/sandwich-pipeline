@@ -9,24 +9,35 @@ from pathlib import Path
 from typing import Iterable
 
 import maya.cmds as mc
-from mayacapture.capture import capture  # type: ignore[import-not-found]
-from Qt import QtWidgets
-
 from core.hud import (
     ARTIST,
     HudContent,
     apply_hud,
     labeled_line,
 )
+from core.playblast.encoding import build_image_input_chain, encode_movie
 from core.ui.progress import progress_scope
+from core.util.users import resolve_artist_display_name
+from mayacapture.capture import capture  # type: ignore[import-not-found]
+from Qt import QtWidgets
+
 from dcc.maya.playblast.turnaround.config import (
+    Elevation,
+    TurnaroundPass,
     TurnaroundPlayblastConfig,
     _first_parent,
     _node_uuid,
 )
+from dcc.maya.playblast.turnaround.framing import (
+    SweptProfile,
+    area_weighted_centroid,
+    fit_distance,
+    pivot_override,
+    projected_frame,
+    sample_review_surface,
+    swept_profile,
+)
 from dcc.maya.util.selection import maintain_selection
-from core.playblast.encoding import build_image_input_chain, encode_movie
-from core.util.users import resolve_artist_display_name
 
 # Turnaround-specific HUD labels. Cross-DCC labels (Artist, ...) live in
 # :mod:`core.hud`.
@@ -35,13 +46,12 @@ _LABEL_POINTS = "Points"
 
 log = logging.getLogger(__name__)
 
-BACKGROUND_COLOR = (0.33, 0.33, 0.33)
-BACKGROUND_TOP = (0.42, 0.44, 0.47)
-BACKGROUND_BOTTOM = (0.17, 0.17, 0.18)
+# Flat charcoal
+BACKGROUND = (0.161, 0.161, 0.161)
 
 
 class MTurnaroundPlayblaster:
-    """Capture a shaded and wireframe asset turnaround into one movie."""
+    """Capture a sequence of asset turnaround passes into one movie."""
 
     _config: TurnaroundPlayblastConfig
 
@@ -54,15 +64,15 @@ class MTurnaroundPlayblaster:
         if not config.review_roots:
             raise ValueError("No review roots were resolved for turnaround export.")
 
-        steps = ["Capturing shaded pass"]
-        if config.include_wireframe_pass:
-            steps.append("Capturing wireframe pass")
+        samples = sample_review_surface(config.review_roots)
+        pivot = pivot_override() or area_weighted_centroid(samples)
+        profile = swept_profile(samples, pivot)
+
+        steps = [_pass_label(index, p) for index, p in enumerate(config.passes)]
         steps += ["Assembling frames", "Encoding movies"]
 
         with tempfile.TemporaryDirectory(prefix="skd_turnaround_") as temp_dir:
             temp_root = Path(temp_dir)
-            shaded_base = temp_root / "turnaround_shaded"
-            wireframe_base = temp_root / "turnaround_wireframe"
             combined_base = temp_root / "turnaround_combined"
 
             with progress_scope(
@@ -75,45 +85,39 @@ class MTurnaroundPlayblaster:
                     _preserved_current_time(),
                     _staged_turntable_roots(
                         config.review_roots,
+                        pivot=pivot,
                         frames_per_pass=config.frames_per_pass,
                     ) as staged_roots,
                     _temporary_turnaround_camera(
-                        staged_roots,
                         focal_length=config.focal_length,
-                        camera_padding=config.camera_padding,
-                    ) as camera_shape,
+                    ) as (camera_transform, camera_shape),
                 ):
-                    progress.begin_step(
-                        "Capturing shaded pass",
-                        "Rendering frames \u2014 this may take a moment...",
-                    )
-                    self._capture_pass(
-                        output_base=shaded_base,
-                        camera_shape=camera_shape,
-                        review_roots=staged_roots,
-                        wireframe_on_shaded=False,
-                    )
-
-                    if config.include_wireframe_pass:
+                    pass_bases: list[Path] = []
+                    for index, turnaround_pass in enumerate(config.passes):
                         progress.begin_step(
-                            "Capturing wireframe pass",
-                            "Rendering frames \u2014 this may take a moment...",
+                            _pass_label(index, turnaround_pass),
+                            "Rendering frames — this may take a moment...",
                         )
+                        _frame_camera_for_pass(
+                            camera_transform,
+                            camera_shape,
+                            profile=profile,
+                            pivot=pivot,
+                            elevation=turnaround_pass.elevation,
+                            aspect=config.width / config.height,
+                            padding=config.camera_padding,
+                        )
+                        pass_base = temp_root / f"turnaround_pass_{index:02d}"
                         self._capture_pass(
-                            output_base=wireframe_base,
+                            output_base=pass_base,
                             camera_shape=camera_shape,
                             review_roots=staged_roots,
-                            wireframe_on_shaded=True,
+                            wireframe_on_shaded=turnaround_pass.wireframe_on_shaded,
                         )
+                        pass_bases.append(pass_base)
 
                 progress.begin_step("Assembling frames")
-                self._assemble_combined_sequence(
-                    shaded_base=shaded_base,
-                    wireframe_base=wireframe_base
-                    if config.include_wireframe_pass
-                    else None,
-                    combined_base=combined_base,
-                )
+                self._assemble_combined_sequence(pass_bases, combined_base)
 
                 progress.begin_step("Encoding movies", "Running FFmpeg...")
                 self._encode_output_movies(combined_base=combined_base)
@@ -127,28 +131,6 @@ class MTurnaroundPlayblaster:
         wireframe_on_shaded: bool,
     ) -> None:
         config = self._config
-
-        viewport_options: dict[str, str | bool] = {
-            # Shaded view's documented topology overlay is `wireframeOnShaded`.
-            "displayAppearance": "smoothShaded",
-            # HUD bakes during encode (apply_hud), so the viewport HUD is off.
-            "headsUpDisplay": False,
-            "wireframeOnShaded": wireframe_on_shaded,
-        }
-        if config.use_default_material:
-            viewport_options["useDefaultMaterial"] = True
-        if config.use_shadows:
-            viewport_options["shadows"] = True
-
-        viewport2_options: dict[str, bool] = {}
-        if config.use_anti_aliasing:
-            viewport2_options.update(
-                {
-                    "lineAAEnable": True,
-                    "multiSampleEnable": True,
-                }
-            )
-
         capture(
             camera=camera_shape,
             width=config.width,
@@ -158,9 +140,11 @@ class MTurnaroundPlayblaster:
             end_frame=config.frames_per_pass,
             format="image",
             compression="png",
-            # Keep this capture on-screen. `mayacapture` does not expose
-            # Maya's `offScreenViewportUpdate` flag, and the topology overlay
-            # needs a live model panel draw to be reliable.
+            # Keep this capture on-screen. Off-screen (`off_screen=True`) renders
+            # an empty frame here: Viewport 2.0's hidden buffer does not draw the
+            # isolated turnaround geometry on Linux, and it also drops the
+            # wireframe-on-shaded overlay. The shot and previs playblasters get
+            # away with off-screen because they render the whole scene unisolated.
             off_screen=False,
             show_ornaments=False,
             overwrite=True,
@@ -168,40 +152,41 @@ class MTurnaroundPlayblaster:
             viewer=False,
             isolate=list(review_roots),
             display_options={
-                "displayGradient": True,
-                "background": BACKGROUND_COLOR,
-                "backgroundTop": BACKGROUND_TOP,
-                "backgroundBottom": BACKGROUND_BOTTOM,
+                "displayGradient": False,
+                "background": BACKGROUND,
             },
-            viewport_options=viewport_options,
-            viewport2_options=viewport2_options,
+            viewport_options={
+                "displayAppearance": "smoothShaded",
+                # Model review ignores scene shaders; materials are not authored
+                # in Maya, so there is nothing to look at but form.
+                "useDefaultMaterial": True,
+                "shadows": True,
+                # HUD bakes during encode (apply_hud), so the viewport HUD is off.
+                "headsUpDisplay": False,
+                "wireframeOnShaded": wireframe_on_shaded,
+            },
+            viewport2_options={
+                "multiSampleEnable": True,
+                "lineAAEnable": True,
+                "ssaoEnable": True,
+            },
         )
 
     def _assemble_combined_sequence(
         self,
-        *,
-        shaded_base: Path,
-        wireframe_base: Path | None,
+        pass_bases: list[Path],
         combined_base: Path,
     ) -> None:
-        self._copy_sequence(
-            source_base=shaded_base,
-            destination_base=combined_base,
-            source_start=1,
-            destination_start=1,
-            frame_count=self._config.frames_per_pass,
-        )
-
-        if wireframe_base is None:
-            return
-
-        self._copy_sequence(
-            source_base=wireframe_base,
-            destination_base=combined_base,
-            source_start=1,
-            destination_start=self._config.frames_per_pass + 1,
-            frame_count=self._config.frames_per_pass,
-        )
+        destination_frame = 1
+        for pass_base in pass_bases:
+            self._copy_sequence(
+                source_base=pass_base,
+                destination_base=combined_base,
+                source_start=1,
+                destination_start=destination_frame,
+                frame_count=self._config.frames_per_pass,
+            )
+            destination_frame += self._config.frames_per_pass
 
     @staticmethod
     def _copy_sequence(
@@ -271,6 +256,11 @@ class MTurnaroundPlayblaster:
         )
 
 
+def _pass_label(index: int, turnaround_pass: TurnaroundPass) -> str:
+    mode = "wireframe" if turnaround_pass.wireframe_on_shaded else "shaded"
+    return f"Pass {index + 1}: {turnaround_pass.elevation.label} {mode}"
+
+
 @contextmanager
 def _preserved_current_time():
     current_time = int(mc.currentTime(query=True))
@@ -284,6 +274,7 @@ def _preserved_current_time():
 def _staged_turntable_roots(
     review_roots: Iterable[str],
     *,
+    pivot: tuple[float, float],
     frames_per_pass: int,
 ):
     resolved_roots: list[str] = []
@@ -298,15 +289,18 @@ def _staged_turntable_roots(
 
     root_records: list[tuple[str, str | None]] = []
     for root in resolved_root_paths:
-        parent = _parent_path(root)
+        parent = _first_parent(root)
         parent_uuid = _node_uuid(parent) if parent else None
         root_records.append((_node_uuid(root), parent_uuid))
 
     turntable_group = str(
         mc.createNode("transform", name=_unique_name("assetTurnaroundTurntable_GRP"))
     )
-    center = _bounding_box_center(resolved_root_paths)
-    mc.xform(turntable_group, worldSpace=True, translation=center)
+    mc.xform(
+        turntable_group,
+        worldSpace=True,
+        translation=(pivot[0], 0.0, pivot[1]),
+    )
 
     try:
         for root_uuid, _ in root_records:
@@ -348,54 +342,83 @@ def _staged_turntable_roots(
 
 
 @contextmanager
-def _temporary_turnaround_camera(
-    review_roots: Iterable[str],
-    *,
-    focal_length: float,
-    camera_padding: float,
-):
-    bbox = _exact_bounding_box(review_roots)
-    center = _bounding_box_center_from_bbox(bbox)
-    size_x, size_y, size_z = _bounding_box_size_from_bbox(bbox)
-    radius = max(0.5 * math.sqrt(size_x**2 + size_y**2 + size_z**2), 1.0)
-    del size_y
-
+def _temporary_turnaround_camera(*, focal_length: float):
     camera_transform, camera_shape = mc.camera(name=_unique_name("assetTurnaround_cam"))  # type: ignore
-    aim_locator: str = mc.spaceLocator(name=_unique_name("assetTurnaroundAim_LOC"))[0]  # type: ignore
-    aim_constraint = None
-
     try:
         mc.setAttr(f"{camera_shape}.focalLength", focal_length)  # type: ignore
-        distance = _camera_distance_for_radius(
-            camera_shape,
-            radius=radius,
-            padding=camera_padding,
-        )
-        near_clip = max(0.1, distance - (radius * 2.0))
-        far_clip = max(distance + (radius * 4.0), 1000.0)
-        mc.setAttr(f"{camera_shape}.nearClipPlane", near_clip)  # type: ignore
-        mc.setAttr(f"{camera_shape}.farClipPlane", far_clip)  # type: ignore
-
-        camera_position = (center[0], center[1], center[2] - distance)
-        aim_position = center
-        mc.xform(camera_transform, worldSpace=True, translation=camera_position)
-        mc.xform(aim_locator, worldSpace=True, translation=aim_position)
-        aim_constraint = mc.aimConstraint(  # type: ignore
-            aim_locator,
-            camera_transform,
-            aimVector=(0, 0, -1),
-            upVector=(0, 1, 0),
-            worldUpType="vector",
-            worldUpVector=(0, 1, 0),
-        )[0]
-        yield str(camera_shape)
+        # Vertical film fit: the rendered height tracks the vertical aperture,
+        # so `fit_distance` can frame purely from the vertical field of view.
+        mc.setAttr(f"{camera_shape}.filmFit", 2)  # type: ignore
+        yield str(camera_transform), str(camera_shape)
     finally:
-        if aim_constraint and mc.objExists(aim_constraint):  # type: ignore
-            mc.delete(aim_constraint)  # type: ignore
-        if mc.objExists(aim_locator):
-            mc.delete(aim_locator)
         if mc.objExists(camera_transform):
             mc.delete(camera_transform)
+
+
+def _frame_camera_for_pass(
+    camera_transform: str,
+    camera_shape: str,
+    *,
+    profile: SweptProfile,
+    pivot: tuple[float, float],
+    elevation: Elevation,
+    aspect: float,
+    padding: float,
+) -> None:
+    phi = math.radians(float(elevation))
+    width, height = projected_frame(profile, phi)
+    distance = fit_distance(
+        width,
+        height,
+        vertical_fov=_vertical_fov(camera_shape),
+        aspect=aspect,
+        padding=padding,
+    )
+
+    aim = (pivot[0], profile.center_y, pivot[1])
+    position = (
+        aim[0],
+        aim[1] + distance * math.sin(phi),
+        aim[2] - distance * math.cos(phi),
+    )
+    # At the top, the camera looks straight down, so a Y up vector is degenerate;
+    # face the front of the asset toward the top of frame instead.
+    world_up = (0.0, 0.0, -1.0) if elevation is Elevation.TOP else (0.0, 1.0, 0.0)
+
+    reach = max(width, height) * 0.5
+    mc.setAttr(f"{camera_shape}.nearClipPlane", max(0.1, distance - 2.0 * reach))  # type: ignore
+    mc.setAttr(f"{camera_shape}.farClipPlane", max(distance + 4.0 * reach, 1000.0))  # type: ignore
+
+    _aim_camera(camera_transform, position=position, aim=aim, world_up=world_up)
+
+
+def _aim_camera(
+    camera_transform: str,
+    *,
+    position: tuple[float, float, float],
+    aim: tuple[float, float, float],
+    world_up: tuple[float, float, float],
+) -> None:
+    mc.xform(camera_transform, worldSpace=True, translation=position)
+    aim_locator: str = mc.spaceLocator(name=_unique_name("assetTurnaroundAim_LOC"))[0]  # type: ignore
+    mc.xform(aim_locator, worldSpace=True, translation=aim)
+    constraint: str = mc.aimConstraint(  # type: ignore
+        aim_locator,
+        camera_transform,
+        aimVector=(0, 0, -1),
+        upVector=(0, 1, 0),
+        worldUpType="vector",
+        worldUpVector=world_up,
+    )[0]
+    # The constraint has done its job orienting the camera; drop it so the
+    # next pass can re-aim from scratch.
+    mc.delete(constraint, aim_locator)
+
+
+def _vertical_fov(camera_shape: str) -> float:
+    aperture_mm = float(mc.getAttr(f"{camera_shape}.verticalFilmAperture")) * 25.4
+    focal_length = float(mc.getAttr(f"{camera_shape}.focalLength"))
+    return 2.0 * math.atan(aperture_mm / (2.0 * focal_length))
 
 
 def _polygon_point_count(review_roots: tuple[str, ...]) -> int:
@@ -419,68 +442,6 @@ def _polygon_point_count(review_roots: tuple[str, ...]) -> int:
         except (RuntimeError, ValueError):
             log.warning("Could not evaluate point count for mesh '%s'.", mesh_path)
     return point_count
-
-
-def _exact_bounding_box(
-    nodes: Iterable[str],
-) -> tuple[float, float, float, float, float, float]:
-    resolved_nodes = list(nodes)
-    if not resolved_nodes:
-        raise ValueError("Bounding box requires at least one node.")
-
-    min_x, min_y, min_z, max_x, max_y, max_z = mc.exactWorldBoundingBox(resolved_nodes)  # type: ignore
-    return (
-        float(min_x),
-        float(min_y),
-        float(min_z),
-        float(max_x),
-        float(max_y),
-        float(max_z),
-    )
-
-
-def _bounding_box_center(nodes: Iterable[str]) -> tuple[float, float, float]:
-    return _bounding_box_center_from_bbox(_exact_bounding_box(nodes))
-
-
-def _bounding_box_center_from_bbox(
-    bbox: tuple[float, float, float, float, float, float],
-) -> tuple[float, float, float]:
-    min_x, min_y, min_z, max_x, max_y, max_z = bbox
-    return (
-        (min_x + max_x) * 0.5,
-        (min_y + max_y) * 0.5,
-        (min_z + max_z) * 0.5,
-    )
-
-
-def _bounding_box_size_from_bbox(
-    bbox: tuple[float, float, float, float, float, float],
-) -> tuple[float, float, float]:
-    min_x, min_y, min_z, max_x, max_y, max_z = bbox
-    return (
-        max(max_x - min_x, 0.001),
-        max(max_y - min_y, 0.001),
-        max(max_z - min_z, 0.001),
-    )
-
-
-def _camera_distance_for_radius(
-    camera_shape: str,
-    *,
-    radius: float,
-    padding: float,
-) -> float:
-    focal_length = float(mc.getAttr(f"{camera_shape}.focalLength"))
-    horizontal_aperture = (
-        float(mc.getAttr(f"{camera_shape}.horizontalFilmAperture")) * 25.4
-    )
-    vertical_aperture = float(mc.getAttr(f"{camera_shape}.verticalFilmAperture")) * 25.4
-
-    horizontal_fov = 2.0 * math.atan(horizontal_aperture / (2.0 * focal_length))
-    vertical_fov = 2.0 * math.atan(vertical_aperture / (2.0 * focal_length))
-    fit_fov = max(min(horizontal_fov, vertical_fov), 0.001)
-    return (radius * padding) / math.sin(fit_fov * 0.5)
 
 
 def _set_linear_turntable_animation(
@@ -509,10 +470,6 @@ def _current_node_path(node_uuid: str) -> str | None:
     if not matches:
         return None
     return str(matches[0])
-
-
-def _parent_path(node: str) -> str | None:
-    return _first_parent(node)
 
 
 def _unique_name(base_name: str) -> str:
