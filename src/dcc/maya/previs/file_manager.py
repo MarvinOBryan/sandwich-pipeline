@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import logging
-import re
 from pathlib import Path
 from typing import cast
 
 import maya.cmds as mc
 from pxr import Sdf
 
-from core.shotgrid import SGEntity, Shot
+from core.shotgrid import SGEntity, Shot, is_previs_shot_code
 from core.util.paths import get_previs_path
 from core.versioning import VersionStreamSpec
 
@@ -20,11 +19,6 @@ from . import playback, state
 from .state import PrevisState
 
 log = logging.getLogger(__name__)
-
-# One Maya file per sequence, anchored to a ShotGrid Shot whose code matches
-# this regex: `A_previs`, or `A_previs_2` for a split sequence. Real shots use
-# `<letter>_<number>` codes.
-SEQUENCE_PROXY_RE = re.compile(r"^[A-Z]_previs(?:_\d+)?$")
 
 _ROOT_LAYER_FILENAME = "maya_root.usd"
 
@@ -42,7 +36,7 @@ class MPrevisFileManager(MShotFileManager):
         return True
 
     def _filter_entities(self, entities: list[SGEntity]) -> list[SGEntity]:
-        return [e for e in entities if e.code and SEQUENCE_PROXY_RE.match(e.code)]
+        return [e for e in entities if is_previs_shot_code(e.code)]
 
     def _compute_entity_path(self, entity: SGEntity) -> Path:
         shot = cast(Shot, entity)

@@ -7,7 +7,7 @@ from pxr import Usd, UsdGeom
 
 from dcc.maya.rig.utils import get_rig_filepath_from_asset
 from core.shot import maya_anim_stream, shot_owner_for
-from core.shotgrid import Shot
+from core.shotgrid import SGEntity, Shot, is_previs_shot_code
 from core.versioning import VersionStreamSpec, path_matches_stream
 
 from .shotfile_manager import MShotFileManager
@@ -89,6 +89,10 @@ class MAnimShotFileManager(MShotFileManager):
 
     def _get_subpath(self) -> str:
         return "anim"
+
+    def _filter_entities(self, entities: list[SGEntity]) -> list[SGEntity]:
+        # Previs sequence proxies aren't real shots; animators never open them.
+        return [e for e in entities if not is_previs_shot_code(e.code)]
 
     def _setup_scene(self) -> None:
         self._import_camera()
