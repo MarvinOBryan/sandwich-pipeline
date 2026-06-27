@@ -4,7 +4,7 @@ from pathlib import Path
 from core.ui import MessageDialogCustomButtons
 from core.shot import maya_rlo_stream, shot_owner_for
 from core.versioning import path_matches_stream
-from core.shotgrid import SGEntity, Shot
+from core.shotgrid import SGEntity, Shot, is_previs_shot_code
 from core.versioning import VersionStreamSpec
 
 from .shotfile_manager import MShotFileManager
@@ -21,6 +21,10 @@ class MRLOShotFileManager(MShotFileManager):
 
     def _get_subpath(self) -> str:
         return "rlo"
+
+    def _filter_entities(self, entities: list[SGEntity]) -> list[SGEntity]:
+        # Previs sequence proxies aren't real shots; RLO never opens them.
+        return [e for e in entities if not is_previs_shot_code(e.code)]
 
     def _setup_scene(self) -> None:
         self._import_env()

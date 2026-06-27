@@ -21,7 +21,7 @@ from Qt.QtWidgets import (
     QWidget,
 )
 
-from core.shotgrid import ShotGrid
+from core.shotgrid import ShotGrid, is_previs_shot_code
 from core.ui import MessageDialog, MessageDialogCustomButtons
 from core.util.paths import get_production_path
 
@@ -38,7 +38,6 @@ from . import (
     status,
     style,
 )
-from .file_manager import SEQUENCE_PROXY_RE
 from .state import PrevisShot, PrevisState
 from .timeline import PrevisTimeline
 
@@ -177,7 +176,7 @@ class PrevisPanel(MayaQWidgetDockableMixin, QWidget):  # type: ignore[misc]
         code = raw[0] if isinstance(raw, (list, tuple)) and raw else raw
         if not isinstance(code, str):
             return None
-        return code if SEQUENCE_PROXY_RE.match(code) else None
+        return code if is_previs_shot_code(code) else None
 
     def pick_monitor(self) -> None:
         monitor.pick_monitor(on_bound=self._on_monitor_bound)

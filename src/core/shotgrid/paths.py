@@ -100,6 +100,17 @@ def build_shot_path(shot_code: str | None) -> str:
     return "/".join(("shot", validate_shot_code_token(shot_code)))
 
 
+# A previs sequence is anchored to a proxy Shot whose code is a single sequence
+# letter plus `_previs` (`A_previs`, or `A_previs_2` for a split sequence). Real
+# shots use `<letter>_<number>` codes, so this never collides with them.
+_PREVIS_SHOT_CODE_RE = re.compile(r"^[A-Z]_previs(?:_\d+)?$")
+
+
+def is_previs_shot_code(shot_code: str | None) -> bool:
+    """True if `shot_code` names a previs sequence-proxy Shot, not a real shot."""
+    return bool(shot_code and _PREVIS_SHOT_CODE_RE.match(shot_code))
+
+
 def split_csv_set(value: str | None) -> set[str]:
     """Parse a comma-separated ShotGrid string into normalized variant tokens.
 
