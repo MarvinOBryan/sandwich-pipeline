@@ -9,12 +9,15 @@ from pathlib import Path
 import substance_painter as sp
 from substance_painter.exception import ProjectError, ServiceNotFoundError
 
+from core.struct.material import DisplacementSource, NormalSource, NormalType
 from dcc.substance_painter.publish.types import (
     ResolvedExportTarget,
     TexSetExportSettings,
 )
 from dcc.substance_painter.util.texture_set import texture_set_name
-from core.struct.material import DisplacementSource, NormalSource, NormalType
+
+_COLOR_EXPORT_COLORSPACE = "sRGB - Texture"
+_DATA_EXPORT_COLORSPACE = "Raw"
 
 
 def channel_export_name(channel: sp.textureset.Channel) -> str:
@@ -98,6 +101,7 @@ def generate_export_config(
                                 for color in colors
                             ],
                             "parameters": {
+                                "colorSpace": _DATA_EXPORT_COLORSPACE,
                                 "bitDepth": bit_depth.lower(),
                                 "fileFormat": "png",
                                 "sizeLog2": target.settings.resolution,
@@ -147,6 +151,7 @@ def _shader_maps(export_settings: TexSetExportSettings) -> list[dict[str, object
                 for ch in "RGB"
             ],
             "parameters": {
+                "colorSpace": _COLOR_EXPORT_COLORSPACE,
                 "bitDepth": "16",
                 "fileFormat": "png",
                 "sizeLog2": export_settings.resolution,
@@ -163,6 +168,7 @@ def _shader_maps(export_settings: TexSetExportSettings) -> list[dict[str, object
                 },
             ],
             "parameters": {
+                "colorSpace": _DATA_EXPORT_COLORSPACE,
                 "bitDepth": "8",
                 "fileFormat": "png",
                 "sizeLog2": export_settings.resolution,
@@ -179,6 +185,7 @@ def _shader_maps(export_settings: TexSetExportSettings) -> list[dict[str, object
                 },
             ],
             "parameters": {
+                "colorSpace": _DATA_EXPORT_COLORSPACE,
                 "bitDepth": "8",
                 "fileFormat": "png",
                 "sizeLog2": export_settings.resolution,
@@ -195,6 +202,7 @@ def _shader_maps(export_settings: TexSetExportSettings) -> list[dict[str, object
                 },
             ],
             "parameters": {
+                "colorSpace": _DATA_EXPORT_COLORSPACE,
                 "bitDepth": "8",
                 "fileFormat": "png",
                 "sizeLog2": export_settings.resolution,
@@ -212,6 +220,7 @@ def _shader_maps(export_settings: TexSetExportSettings) -> list[dict[str, object
                 for ch in "RGB"
             ],
             "parameters": {
+                "colorSpace": _COLOR_EXPORT_COLORSPACE,
                 "bitDepth": "16",
                 "fileFormat": "png",
                 "sizeLog2": export_settings.resolution,
@@ -228,6 +237,7 @@ def _shader_maps(export_settings: TexSetExportSettings) -> list[dict[str, object
                 },
             ],
             "parameters": {
+                "colorSpace": _DATA_EXPORT_COLORSPACE,
                 "bitDepth": "8",
                 "fileFormat": "png",
                 "sizeLog2": export_settings.resolution,
@@ -257,6 +267,7 @@ def _shader_maps(export_settings: TexSetExportSettings) -> list[dict[str, object
                 for ch in "RGB"
             ],
             "parameters": {
+                "colorSpace": _DATA_EXPORT_COLORSPACE,
                 **(
                     {
                         "bitDepth": "16f",
@@ -291,6 +302,7 @@ def _shader_maps(export_settings: TexSetExportSettings) -> list[dict[str, object
                     },
                 ],
                 "parameters": {
+                    "colorSpace": _DATA_EXPORT_COLORSPACE,
                     "bitDepth": "16",
                     "fileFormat": "png",
                     "sizeLog2": export_settings.resolution,
@@ -315,6 +327,7 @@ def _preview_surface_maps() -> list[dict[str, object]]:
                 for ch in "RGB"
             ],
             "parameters": {
+                "colorSpace": _COLOR_EXPORT_COLORSPACE,
                 "bitDepth": "8",
                 "dithering": True,
                 "fileFormat": "jpeg",
@@ -343,6 +356,7 @@ def _preview_surface_maps() -> list[dict[str, object]]:
                 },
             ],
             "parameters": {
+                "colorSpace": _DATA_EXPORT_COLORSPACE,
                 "bitDepth": "8",
                 "fileFormat": "jpeg",
             },
@@ -359,6 +373,7 @@ def _preview_surface_maps() -> list[dict[str, object]]:
                 for ch in "RGB"
             ],
             "parameters": {
+                "colorSpace": _COLOR_EXPORT_COLORSPACE,
                 "bitDepth": "8",
                 "dithering": True,
                 "fileFormat": "jpeg",
@@ -376,6 +391,7 @@ def _preview_surface_maps() -> list[dict[str, object]]:
                 for ch in "RGB"
             ],
             "parameters": {
+                "colorSpace": _DATA_EXPORT_COLORSPACE,
                 "bitDepth": "8",
                 "fileFormat": "jpeg",
             },
