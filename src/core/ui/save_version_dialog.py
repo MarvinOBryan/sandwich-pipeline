@@ -4,10 +4,6 @@ from typing import Optional
 
 from Qt import QtCore, QtWidgets
 
-from core.versioning import VersionRecord, version_label
-
-_UNTITLED_LABEL = "(untitled)"
-
 
 class SaveVersionDialog(QtWidgets.QDialog):
     _layout: QtWidgets.QVBoxLayout
@@ -83,23 +79,4 @@ class SaveVersionDialog(QtWidgets.QDialog):
         ok_btn.setEnabled(bool(self.get_title()))
 
 
-class PromoteVersionDialog(SaveVersionDialog):
-    def __init__(
-        self,
-        parent: QtWidgets.QWidget | None,
-        record: VersionRecord,
-    ) -> None:
-        version_text = version_label(record.version)
-        title_text = (record.title or "").strip() or _UNTITLED_LABEL
-        super().__init__(
-            parent,
-            title="Save as New Version",
-            prompt=f"Create a new version from: {version_text} - {title_text}",
-        )
-        ok_btn = self._buttons.button(QtWidgets.QDialogButtonBox.Ok)
-        if ok_btn:
-            ok_btn.setText("Create Version")
-        self._title_field.setPlaceholderText("Enter title for the new version...")
-
-
-__all__ = ["PromoteVersionDialog", "SaveVersionDialog"]
+__all__ = ["SaveVersionDialog"]

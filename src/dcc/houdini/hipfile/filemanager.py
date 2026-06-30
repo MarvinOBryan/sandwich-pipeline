@@ -8,17 +8,25 @@ from env_sg import DB_Config
 
 from dcc.houdini import runtime as houdini_runtime
 from dcc.houdini.hipfile.paths import current_hip_path
-from core.ui import MessageDialog
-from core.ui.save_version_dialog import PromoteVersionDialog, SaveVersionDialog
+from core.ui import (
+    RESTORE_CANCEL,
+    RESTORE_SAVE_FIRST,
+    MessageDialog,
+    prompt_restore_conflict,
+)
+from core.ui.save_version_dialog import SaveVersionDialog
 from core.ui.version_browser import VersionBrowserWidget
 from core.shotgrid import SGEntity, ShotGrid
 from core.util import FileManager
 from core.versioning import (
+    VersionRecord,
     VersionStreamSpec,
     list_version_records,
-    promote_version as _promote_version,
+    resolve_working_file_version,
+    restore_version,
+    restored_message,
     save_version as _save_version,
-    version_label,
+    saved_message,
 )
 
 log = logging.getLogger(__name__)
@@ -218,110 +226,72 @@ class HFileManager(FileManager):
         if selected_record is None:
             return
 
-        if selected_action == VersionBrowserWidget.ACTION_OPEN:
-            backup_path = selected_record.backup_path
-            if backup_path is None:
-                MessageDialog(
-                    self._main_window,
-                    "The selected version has no backup file path.",
-                    "Open Version Failed",
-                ).exec_()
+        if selected_action == VersionBrowserWidget.ACTION_RESTORE:
+            self._restore_version(selected_record, stream, entity)
+
+    def _restore_version(
+        self, record: VersionRecord, stream: VersionStreamSpec, entity: SGEntity
+    ) -> None:
+        kind = self._entity_label()
+        if self._has_unversioned_work(stream):
+            choice = prompt_restore_conflict(self._main_window)
+            if choice == RESTORE_CANCEL:
                 return
-            if not backup_path.exists() or not backup_path.is_file():
-                MessageDialog(
-                    self._main_window,
-                    f"Backup file is missing on disk:\n{backup_path}",
-                    "Open Version Failed",
-                ).exec_()
-                return
-            if not self._check_unsaved_changes():
+            if choice == RESTORE_SAVE_FIRST and not self._save_named_version(stream):
                 return
 
-            load_warning: str | None = None
-            try:
-                load_warning = self._load_hip_file(backup_path)
-            except Exception as exc:
-                log.exception("Failed to open HIP version: %s", backup_path)
-                MessageDialog(
-                    self._main_window,
-                    (
-                        "Failed to open selected version:\n"
-                        f"{self._describe_exception(exc, fallback='Could not load the HIP file')}"
-                    ),
-                    "Open Version Failed",
-                ).exec_()
-                return
-
-            try:
-                self._post_open_file(entity)
-            except Exception as exc:
-                log.exception(
-                    "Loaded HIP version but post-open setup failed: %s", backup_path
-                )
-                MessageDialog(
-                    self._main_window,
-                    (
-                        f"The selected version loaded, but {kind} setup could not finish:\n"
-                        f"{self._describe_exception(exc, fallback=f'{kind[0].upper() + kind[1:]} post-open setup failed')}"
-                    ),
-                    "Open Version Failed",
-                ).exec_()
-                return
-
-            if load_warning:
-                self._show_hip_load_warning(
-                    path=backup_path,
-                    warning=load_warning,
-                    title="Version Opened With Warnings",
-                )
+        try:
+            working_path = restore_version(record, stream)
+        except Exception as exc:
+            log.exception("Failed to restore %s version.", kind)
+            MessageDialog(
+                self._main_window,
+                f"Failed to restore version:\n{exc}",
+                "Restore Version Failed",
+            ).exec_()
             return
 
-        if selected_action == VersionBrowserWidget.ACTION_PROMOTE:
-            source_backup = selected_record.backup_path
-            if source_backup is None or not source_backup.exists():
-                MessageDialog(
-                    self._main_window,
-                    "Cannot create a new version from this entry because the backup file is missing.",
-                    "Create Version Failed",
-                ).exec_()
-                return
-
-            promote_dialog = PromoteVersionDialog(self._main_window, selected_record)
-            if not promote_dialog.exec_():
-                return
-            try:
-                promoted_record = _promote_version(
-                    selected_record,
-                    stream,
-                    title=promote_dialog.get_title(),
-                    note=promote_dialog.get_note(),
-                )
-            except Exception as exc:
-                log.exception("Failed to promote version.")
-                MessageDialog(
-                    self._main_window,
-                    f"Failed to create new version:\n{exc}",
-                    "Create Version Failed",
-                ).exec_()
-                return
-
+        try:
+            load_warning = self._load_hip_file(working_path)
+            self._post_open_file(entity)
+        except Exception as exc:
+            log.exception("Restored %s version but could not open it.", kind)
             MessageDialog(
                 self._main_window,
                 (
-                    f"Created new version {version_label(promoted_record.version)} "
-                    f'"{promoted_record.title or "(untitled)"}" from the selected backup.\n'
-                    "Open it from Version History to continue working from it."
+                    "Restored the version but could not open it:\n"
+                    f"{self._describe_exception(exc, fallback='Could not load the HIP file')}"
                 ),
-                "Version Created",
+                "Restore Version Failed",
             ).exec_()
+            return
 
-    def _do_save_version(self, hip_path: Path, stream: VersionStreamSpec) -> None:
+        if load_warning:
+            self._show_hip_load_warning(
+                path=working_path,
+                warning=load_warning,
+                title="Version Restored With Warnings",
+            )
+            return
+
+        MessageDialog(
+            self._main_window,
+            restored_message(record),
+            "Version Restored",
+        ).exec_()
+
+    def _has_unversioned_work(self, stream: VersionStreamSpec) -> bool:
+        if hou.hipFile.hasUnsavedChanges():
+            return True
+        return resolve_working_file_version(stream) is None
+
+    def _write_named_version(self, hip_path: Path, stream: VersionStreamSpec) -> bool:
         """Prompt for a version title and write a backup of *hip_path*."""
         dialog = SaveVersionDialog(self._main_window)
         if not dialog.exec_():
-            return
+            return False
         try:
-            version_record = _save_version(
+            record = _save_version(
                 hip_path,
                 stream,
                 title=dialog.get_title(),
@@ -334,13 +304,17 @@ class HFileManager(FileManager):
                 f"Failed to save version:\n{exc}",
                 "Save Version Failed",
             ).exec_()
-            return
+            return False
 
         MessageDialog(
             self._main_window,
-            (
-                f"Saved {version_label(version_record.version)} "
-                f'"{version_record.title or "(untitled)"}".'
-            ),
+            saved_message(record),
             "Version Saved",
         ).exec_()
+        return True
+
+    def _save_named_version(self, stream: VersionStreamSpec) -> bool:
+        hip_path = self._ensure_hip_saved()
+        if hip_path is None:
+            return False
+        return self._write_named_version(hip_path, stream)

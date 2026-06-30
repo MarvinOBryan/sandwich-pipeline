@@ -13,8 +13,13 @@ from pxr import Sdf, Usd, UsdGeom
 from core.util.paths import get_production_path
 from timeline_marker.ui import TimelineMarker  # type: ignore[import-not-found]
 
-from core.ui import MessageDialog
-from core.ui.save_version_dialog import PromoteVersionDialog, SaveVersionDialog
+from core.ui import (
+    RESTORE_CANCEL,
+    RESTORE_SAVE_FIRST,
+    MessageDialog,
+    prompt_restore_conflict,
+)
+from core.ui.save_version_dialog import SaveVersionDialog
 from core.ui.version_browser import VersionBrowserWidget
 from dcc.maya.runtime import get_main_qt_window
 from dcc.maya.util.on_open import install_on_open_node
@@ -27,12 +32,13 @@ from core.shotgrid import (
 )
 from core.util import FileManager, log_errors
 from core.versioning import (
+    VersionRecord,
     VersionStreamSpec,
     list_version_records,
-    version_label,
-)
-from core.versioning import (
-    promote_version as _promote_version,
+    resolve_working_file_version,
+    restore_version,
+    restored_message,
+    saved_message,
 )
 from core.versioning import (
     save_version as _save_version,
@@ -497,87 +503,62 @@ class MShotFileManager(FileManager):
         if selected_record is None:
             return
 
-        if selected_action == VersionBrowserWidget.ACTION_OPEN:
-            backup_path = selected_record.backup_path
-            if backup_path is None:
-                MessageDialog(
-                    self._main_window,
-                    "The selected version has no backup file path.",
-                    "Open Version Failed",
-                ).exec_()
+        if selected_action == VersionBrowserWidget.ACTION_RESTORE:
+            self._restore_version(selected_record, stream, shot)
+
+    def _restore_version(
+        self, record: VersionRecord, stream: VersionStreamSpec, entity: Shot
+    ) -> None:
+        kind = self._entity_label()
+        if self._has_unversioned_work(stream):
+            choice = prompt_restore_conflict(self._main_window)
+            if choice == RESTORE_CANCEL:
                 return
-            if not backup_path.exists() or not backup_path.is_file():
-                MessageDialog(
-                    self._main_window,
-                    f"Backup file is missing on disk:\n{backup_path}",
-                    "Open Version Failed",
-                ).exec_()
-                return
-            if not self._check_unsaved_changes():
+            if choice == RESTORE_SAVE_FIRST and not self._save_named_version(stream):
                 return
 
-            try:
-                self._open_file(backup_path)
-                self._post_open_file(shot)
-            except Exception as exc:
-                log.exception("Failed to open %s backup version: %s", kind, backup_path)
-                MessageDialog(
-                    self._main_window,
-                    f"Failed to open selected version:\n{exc}",
-                    "Open Version Failed",
-                ).exec_()
-            return
-
-        if selected_action == VersionBrowserWidget.ACTION_PROMOTE:
-            source_backup = selected_record.backup_path
-            if source_backup is None or not source_backup.exists():
-                MessageDialog(
-                    self._main_window,
-                    "Cannot create a new version from this entry because the backup file is missing.",
-                    "Create Version Failed",
-                ).exec_()
-                return
-
-            promote_dialog = PromoteVersionDialog(self._main_window, selected_record)
-            if not promote_dialog.exec_():
-                return
-
-            try:
-                promoted_record = _promote_version(
-                    selected_record,
-                    stream,
-                    title=promote_dialog.get_title(),
-                    note=promote_dialog.get_note(),
-                )
-            except Exception as exc:
-                log.exception("Failed to create a new %s version.", kind)
-                MessageDialog(
-                    self._main_window,
-                    f"Failed to create new version:\n{exc}",
-                    "Create Version Failed",
-                ).exec_()
-                return
-
+        try:
+            working_path = restore_version(record, stream)
+        except Exception as exc:
+            log.exception("Failed to restore %s version.", kind)
             MessageDialog(
                 self._main_window,
-                (
-                    f"Created new version {version_label(promoted_record.version)} "
-                    f'"{promoted_record.title or "(untitled)"}" from the selected backup.\n'
-                    "Open it from Version History to continue working from it."
-                ),
-                "Version Created",
+                f"Failed to restore version:\n{exc}",
+                "Restore Version Failed",
             ).exec_()
-
-    def _do_save_version_for_scene(
-        self, scene_path: Path, stream: VersionStreamSpec
-    ) -> None:
-        """Prompt for a version title and write a backup of *scene_path*."""
-        dialog = SaveVersionDialog(self._main_window)
-        if not dialog.exec_():
             return
 
         try:
-            version_record = _save_version(
+            self._open_file(working_path)
+            self._post_open_file(entity)
+        except Exception as exc:
+            log.exception("Restored %s version but could not open it.", kind)
+            MessageDialog(
+                self._main_window,
+                f"Restored the version but could not open it:\n{exc}",
+                "Restore Version Failed",
+            ).exec_()
+            return
+
+        MessageDialog(
+            self._main_window,
+            restored_message(record),
+            "Version Restored",
+        ).exec_()
+
+    def _has_unversioned_work(self, stream: VersionStreamSpec) -> bool:
+        if mc.file(query=True, modified=True):
+            return True
+        return resolve_working_file_version(stream) is None
+
+    def _write_named_version(self, scene_path: Path, stream: VersionStreamSpec) -> bool:
+        """Prompt for a version title and write a backup of *scene_path*."""
+        dialog = SaveVersionDialog(self._main_window)
+        if not dialog.exec_():
+            return False
+
+        try:
+            record = _save_version(
                 scene_path,
                 stream,
                 title=dialog.get_title(),
@@ -590,16 +571,20 @@ class MShotFileManager(FileManager):
                 f"Failed to save version:\n{exc}",
                 "Save Version Failed",
             ).exec_()
-            return
+            return False
 
         MessageDialog(
             self._main_window,
-            (
-                f"Saved {version_label(version_record.version)} "
-                f'"{version_record.title or "(untitled)"}".'
-            ),
+            saved_message(record),
             "Version Saved",
         ).exec_()
+        return True
+
+    def _save_named_version(self, stream: VersionStreamSpec) -> bool:
+        scene_path = self._ensure_scene_saved()
+        if scene_path is None:
+            return False
+        return self._write_named_version(scene_path, stream)
 
     def save_version_for_current_scene(self) -> None:
         scene_path = self._ensure_scene_saved()
@@ -616,4 +601,4 @@ class MShotFileManager(FileManager):
             return
 
         stream, _, _ = resolved
-        self._do_save_version_for_scene(scene_path, stream)
+        self._write_named_version(scene_path, stream)

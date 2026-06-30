@@ -24,8 +24,14 @@ from core.util.paths import resolve_mapped_path
 
 from core.asset import asset_owner_for, paths_for_asset, substance_project_stream
 from core.shotgrid import Asset, ShotGrid
-from core.ui import MessageDialog, MessageDialogCustomButtons
-from core.ui.save_version_dialog import PromoteVersionDialog, SaveVersionDialog
+from core.ui import (
+    RESTORE_CANCEL,
+    RESTORE_SAVE_FIRST,
+    MessageDialog,
+    MessageDialogCustomButtons,
+    prompt_restore_conflict,
+)
+from core.ui.save_version_dialog import SaveVersionDialog
 from core.ui.version_browser import VersionBrowserWidget
 from dcc.substance_painter.ui.dialogs import (
     SubstanceAssetCreateModeDialog,
@@ -45,10 +51,14 @@ from dcc.substance_painter.util.metadata import (
     store_asset_metadata_when_ready,
 )
 from core.versioning import (
+    VersionRecord,
+    VersionStreamSpec,
     list_version_records,
-    promote_version,
+    resolve_working_file_version,
+    restore_version,
+    restored_message,
     save_version,
-    version_label,
+    saved_message,
 )
 
 log = logging.getLogger(__name__)
@@ -543,76 +553,60 @@ def launch_version_browser_for_current_project() -> None:
     if selected_record is None:
         return
 
-    if selected_action == VersionBrowserWidget.ACTION_OPEN:
-        backup_path = selected_record.backup_path
-        if backup_path is None:
-            MessageDialog(
-                parent,
-                "The selected version has no backup file path.",
-                "Open Version Failed",
-            ).exec_()
-            return
-        if not backup_path.exists() or not backup_path.is_file():
-            MessageDialog(
-                parent,
-                f"Backup file is missing on disk:\n{backup_path}",
-                "Open Version Failed",
-            ).exec_()
-            return
+    if selected_action == VersionBrowserWidget.ACTION_RESTORE:
+        _restore_project_version(
+            parent, selected_record, project_stream, asset, geo_variant=geo_variant
+        )
 
-        if sp.project.needs_saving() and not _confirm_discard_unsaved(parent):
+
+def _has_unversioned_work(project_stream: VersionStreamSpec) -> bool:
+    if sp.project.needs_saving():
+        return True
+    return resolve_working_file_version(project_stream) is None
+
+
+def _restore_project_version(
+    parent: QtWidgets.QWidget | None,
+    record: VersionRecord,
+    project_stream: VersionStreamSpec,
+    asset: Asset,
+    *,
+    geo_variant: str,
+) -> None:
+    if _has_unversioned_work(project_stream):
+        choice = prompt_restore_conflict(parent)
+        if choice == RESTORE_CANCEL:
             return
-        if not _close_current_project(
-            parent, action_context="opening a versioned project"
+        if choice == RESTORE_SAVE_FIRST and not _save_named_version(
+            parent, project_stream
         ):
             return
-        if not _open_existing_project(backup_path, parent):
-            return
-        store_asset_metadata_when_ready(asset, geo_variant=geo_variant)
-        log.info(
-            f"Opened backup version {backup_path} for asset "
-            f"{asset.display_name or asset.name} (variant={geo_variant})"
-        )
+
+    # Close the open project before restoring overwrites its file on disk.
+    if sp.project.is_open() and not _close_current_project(
+        parent, action_context="restoring a version"
+    ):
         return
 
-    if selected_action == VersionBrowserWidget.ACTION_PROMOTE:
-        source_backup = selected_record.backup_path
-        if source_backup is None or not source_backup.exists():
-            MessageDialog(
-                parent,
-                "Cannot create a new version from this entry because the backup file is missing.",
-                "Create Version Failed",
-            ).exec_()
-            return
-
-        promote_dialog = PromoteVersionDialog(parent, selected_record)
-        if not promote_dialog.exec_():
-            return
-        try:
-            promoted_record = promote_version(
-                selected_record,
-                project_stream,
-                title=promote_dialog.get_title(),
-                note=promote_dialog.get_note(),
-            )
-        except Exception as exc:
-            log.exception("Failed to promote Substance Painter version.")
-            MessageDialog(
-                parent,
-                f"Failed to create new version:\n{exc}",
-                "Create Version Failed",
-            ).exec_()
-            return
-
+    try:
+        working_path = restore_version(record, project_stream)
+    except Exception as exc:
+        log.exception("Failed to restore Substance Painter version.")
         MessageDialog(
             parent,
-            (
-                f"Created new version {version_label(promoted_record.version)} "
-                f'"{promoted_record.title or "(untitled)"}" from the selected backup.\n'
-                "Open it from Version History to continue working from it."
-            ),
-            "Version Created",
+            f"Failed to restore version:\n{exc}",
+            "Restore Version Failed",
         ).exec_()
+        return
+
+    if not _open_existing_project(working_path, parent):
+        return
+    store_asset_metadata_when_ready(asset, geo_variant=geo_variant)
+    MessageDialog(
+        parent,
+        restored_message(record),
+        "Version Restored",
+    ).exec_()
 
 
 def launch_save_version() -> None:
@@ -638,18 +632,37 @@ def launch_save_version() -> None:
         ).exec_()
         return
 
-    dialog = SaveVersionDialog(parent)
-    if not dialog.exec_():
-        return
-
     geo_variant = _current_geo_variant()
     project_stream = substance_project_stream(
         paths_for_asset(asset),
         geo_variant,
         owner=asset_owner_for(asset),
     )
+    _write_named_version(parent, project_path, project_stream)
+
+
+def _save_named_version(
+    parent: QtWidgets.QWidget | None, project_stream: VersionStreamSpec
+) -> bool:
+    """Save the current project as a named version; return True on success."""
+    project_path = _ensure_project_saved_for_version_action(
+        parent, action_name="Save Version"
+    )
+    if project_path is None:
+        return False
+    return _write_named_version(parent, project_path, project_stream)
+
+
+def _write_named_version(
+    parent: QtWidgets.QWidget | None,
+    project_path: Path,
+    project_stream: VersionStreamSpec,
+) -> bool:
+    dialog = SaveVersionDialog(parent)
+    if not dialog.exec_():
+        return False
     try:
-        version_record = save_version(
+        record = save_version(
             project_path,
             project_stream,
             title=dialog.get_title(),
@@ -662,16 +675,14 @@ def launch_save_version() -> None:
             f"Failed to save version:\n{exc}",
             "Save Version Failed",
         ).exec_()
-        return
+        return False
 
     MessageDialog(
         parent,
-        (
-            f"Saved {version_label(version_record.version)} "
-            f'"{version_record.title or "(untitled)"}".'
-        ),
+        saved_message(record),
         "Version Saved",
     ).exec_()
+    return True
 
 
 # ---------------------------------------------------------------------------

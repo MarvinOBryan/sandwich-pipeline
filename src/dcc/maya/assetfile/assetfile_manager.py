@@ -15,19 +15,30 @@ from core.util.paths import get_production_path
 
 from core.asset import asset_owner_for, maya_model_stream, paths_for_asset
 from core.asset.paths import BACKUP_DIRNAME
-from core.ui import FilteredListDialog, MessageDialog
-from core.ui.save_version_dialog import PromoteVersionDialog, SaveVersionDialog
+from core.ui import (
+    RESTORE_CANCEL,
+    RESTORE_SAVE_FIRST,
+    FilteredListDialog,
+    MessageDialog,
+    prompt_restore_conflict,
+)
+from core.ui.save_version_dialog import SaveVersionDialog
 from core.ui.version_browser import VersionBrowserWidget
 from dcc.maya.runtime import get_main_qt_window
 from core.shotgrid import Asset, SGEntity, ShotGrid, ShotGridError
 from core.util import FileManager
 from core.versioning import (
+    VersionRecord,
+    VersionStreamSpec,
     current_record,
     get_manifest_path,
     list_version_records,
     load_manifest,
-    promote_version,
+    resolve_working_file_version,
+    restore_version,
+    restored_message,
     save_version,
+    saved_message,
     version_label,
 )
 
@@ -405,9 +416,6 @@ class MAssetFileManager(FileManager):
         return None
 
     def open_version_browser(self) -> None:
-        if not self._check_unsaved_changes():
-            return
-
         scene_raw = mc.file(query=True, sceneName=True)
         if not isinstance(scene_raw, str) or not scene_raw:
             MessageDialog(
@@ -452,65 +460,44 @@ class MAssetFileManager(FileManager):
         if selected_record is None:
             return
 
-        if selected_action == VersionBrowserWidget.ACTION_OPEN:
-            backup_path = selected_record.backup_path
-            if backup_path is None:
-                MessageDialog(
-                    self._main_window,
-                    "The selected version has no backup file path.",
-                    "Open Version",
-                ).exec_()
+        if selected_action == VersionBrowserWidget.ACTION_RESTORE:
+            self._restore_model_version(selected_record, model_stream)
+
+    def _restore_model_version(
+        self, record: VersionRecord, model_stream: VersionStreamSpec
+    ) -> None:
+        if self._has_unversioned_work(model_stream):
+            choice = prompt_restore_conflict(self._main_window)
+            if choice == RESTORE_CANCEL:
                 return
-            if not backup_path.exists() or not backup_path.is_file():
-                MessageDialog(
-                    self._main_window,
-                    f"Backup file is missing on disk:\n{backup_path}",
-                    "Open Version",
-                ).exec_()
+            if choice == RESTORE_SAVE_FIRST and not self._save_named_version(
+                model_stream
+            ):
                 return
 
-            self._open_file(backup_path)
-            self._ensure_scene_asset_metadata()
-            return
-
-        if selected_action == VersionBrowserWidget.ACTION_PROMOTE:
-            source_backup = selected_record.backup_path
-            if source_backup is None or not source_backup.exists():
-                MessageDialog(
-                    self._main_window,
-                    "Cannot create a new version from this entry because the backup file is missing.",
-                    "Create Version Failed",
-                ).exec_()
-                return
-
-            promote_dialog = PromoteVersionDialog(self._main_window, selected_record)
-            if not promote_dialog.exec_():
-                return
-            try:
-                promoted = promote_version(
-                    selected_record,
-                    model_stream,
-                    title=promote_dialog.get_title(),
-                    note=promote_dialog.get_note(),
-                )
-            except Exception as exc:
-                log.exception("Failed to promote Maya model version.")
-                MessageDialog(
-                    self._main_window,
-                    f"Failed to create new version:\n{exc}",
-                    "Create Version Failed",
-                ).exec_()
-                return
-
+        try:
+            working_path = restore_version(record, model_stream)
+        except Exception as exc:
+            log.exception("Failed to restore Maya model version.")
             MessageDialog(
                 self._main_window,
-                (
-                    f"Created new version {version_label(promoted.version)} "
-                    f'"{promoted.title or "(untitled)"}" from the selected backup.\n'
-                    "Open it from Version History to continue working from it."
-                ),
-                "Version Created",
+                f"Failed to restore version:\n{exc}",
+                "Restore Version Failed",
             ).exec_()
+            return
+
+        self._open_file(working_path)
+        self._ensure_scene_asset_metadata(working_path)
+        MessageDialog(
+            self._main_window,
+            restored_message(record),
+            "Version Restored",
+        ).exec_()
+
+    def _has_unversioned_work(self, model_stream: VersionStreamSpec) -> bool:
+        if mc.file(query=True, modified=True):
+            return True
+        return resolve_working_file_version(model_stream) is None
 
     def save_version_for_current_scene(self) -> None:
         scene_path = self._ensure_scene_saved()
@@ -526,14 +513,25 @@ class MAssetFileManager(FileManager):
             ).exec_()
             return
 
-        dialog = SaveVersionDialog(self._main_window)
-        if not dialog.exec_():
-            return
-
         model_stream = maya_model_stream(
             paths_for_asset(asset),
             owner=asset_owner_for(asset),
         )
+        self._write_named_version(scene_path, model_stream)
+
+    def _save_named_version(self, model_stream: VersionStreamSpec) -> bool:
+        scene_path = self._ensure_scene_saved()
+        if scene_path is None:
+            return False
+        return self._write_named_version(scene_path, model_stream)
+
+    def _write_named_version(
+        self, scene_path: Path, model_stream: VersionStreamSpec
+    ) -> bool:
+        dialog = SaveVersionDialog(self._main_window)
+        if not dialog.exec_():
+            return False
+
         try:
             record = save_version(
                 scene_path,
@@ -548,13 +546,14 @@ class MAssetFileManager(FileManager):
                 f"Failed to save version:\n{exc}",
                 "Save Version Failed",
             ).exec_()
-            return
+            return False
 
         MessageDialog(
             self._main_window,
-            f'Saved {version_label(record.version)} "{record.title or "(untitled)"}".',
+            saved_message(record),
             "Version Saved",
         ).exec_()
+        return True
 
     def open_file(self) -> None:
         if not self._check_unsaved_changes():
