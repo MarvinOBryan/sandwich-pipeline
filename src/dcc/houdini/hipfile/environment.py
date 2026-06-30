@@ -200,4 +200,4 @@ class HEnvFileManager(HFileManager):
             return
 
         stream, _, _ = resolved
-        self._do_save_version(hip_path, stream)
+        self._write_named_version(hip_path, stream)

@@ -13,8 +13,7 @@ _UNTITLED_LABEL = "(untitled)"
 
 
 class VersionBrowserWidget(QtWidgets.QDialog):
-    ACTION_OPEN = "open"
-    ACTION_PROMOTE = "promote"
+    ACTION_RESTORE = "restore"
 
     _records: list[VersionRecord]
     _selected_action: str | None
@@ -23,8 +22,7 @@ class VersionBrowserWidget(QtWidgets.QDialog):
     _current_version: int | None
     _table: QtWidgets.QTableWidget
     _detail_label: QtWidgets.QLabel
-    _open_btn: QtWidgets.QPushButton
-    _promote_btn: QtWidgets.QPushButton
+    _restore_btn: QtWidgets.QPushButton
 
     def __init__(
         self,
@@ -108,14 +106,11 @@ class VersionBrowserWidget(QtWidgets.QDialog):
         layout.addWidget(self._detail_label)
 
         button_row = QtWidgets.QHBoxLayout()
-        self._open_btn = QtWidgets.QPushButton("Open Version")
-        self._promote_btn = QtWidgets.QPushButton("Save as New Version")
+        self._restore_btn = QtWidgets.QPushButton("Restore Version")
         cancel_btn = QtWidgets.QPushButton("Cancel")
-        self._open_btn.clicked.connect(self._accept_open)
-        self._promote_btn.clicked.connect(self._accept_promote)
+        self._restore_btn.clicked.connect(self._accept_restore)
         cancel_btn.clicked.connect(self.reject)
-        button_row.addWidget(self._open_btn)
-        button_row.addWidget(self._promote_btn)
+        button_row.addWidget(self._restore_btn)
         button_row.addStretch(1)
         button_row.addWidget(cancel_btn)
         layout.addLayout(button_row)
@@ -173,11 +168,9 @@ class VersionBrowserWidget(QtWidgets.QDialog):
 
     def _on_selection_changed(self) -> None:
         record = self.get_selected_record()
-        row = self._selected_row()
-        if record is None or row is None:
+        if record is None:
             self._detail_label.setText("Select a version to see details.")
-            self._open_btn.setEnabled(False)
-            self._promote_btn.setEnabled(False)
+            self._restore_btn.setEnabled(False)
             return
 
         note_text = (record.note or "").strip() or "(none)"
@@ -193,33 +186,16 @@ class VersionBrowserWidget(QtWidgets.QDialog):
         else:
             self._detail_label.setText(f"Note: {note_text}")
 
-        self._open_btn.setEnabled(has_backup_path)
-        self._promote_btn.setEnabled(
-            has_backup_path
-            and not _is_current_row(row, record, self._records, self._current_version)
-        )
+        self._restore_btn.setEnabled(has_backup_path)
 
     def _on_row_double_clicked(self, _item: QtWidgets.QTableWidgetItem) -> None:
-        if self._open_btn.isEnabled():
-            self._accept_open()
+        if self._restore_btn.isEnabled():
+            self._accept_restore()
 
-    def _accept_open(self) -> None:
-        if self.get_selected_record() is None or not self._open_btn.isEnabled():
+    def _accept_restore(self) -> None:
+        if self.get_selected_record() is None or not self._restore_btn.isEnabled():
             return
-        self._selected_action = self.ACTION_OPEN
-        self.accept()
-
-    def _accept_promote(self) -> None:
-        record = self.get_selected_record()
-        row = self._selected_row()
-        if record is None or row is None:
-            return
-        if (
-            _is_current_row(row, record, self._records, self._current_version)
-            or not self._promote_btn.isEnabled()
-        ):
-            return
-        self._selected_action = self.ACTION_PROMOTE
+        self._selected_action = self.ACTION_RESTORE
         self.accept()
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 from dataclasses import replace
@@ -32,7 +33,6 @@ from .store import (
 )
 
 _MANUAL_SAVE_CONTEXT = "manual_save"
-_PROMOTED_CONTEXT = "promoted"
 
 
 def save_version(
@@ -63,32 +63,15 @@ def save_version(
     )
 
 
-def promote_version(
-    record: VersionRecord,
-    stream: VersionStreamSpec,
-    *,
-    title: str,
-    note: Optional[str] = None,
-) -> VersionRecord:
-    """Copy an existing version into a new version slot."""
+def restore_version(record: VersionRecord, stream: VersionStreamSpec) -> Path:
+    """Replace the working file with a copy of an immutable version.
+
+    Backups are never modified. Returns the working-file path to open.
+    """
     normalized_stream = _normalize_stream(stream)
-    normalized_title = _required_text(title, field_name="title")
-    normalized_note = _optional_text(note)
-
     if _is_compound_stream(normalized_stream):
-        return _promote_compound_version(
-            record,
-            normalized_stream,
-            title=normalized_title,
-            note=normalized_note,
-        )
-
-    return _promote_single_file_version(
-        record,
-        normalized_stream,
-        title=normalized_title,
-        note=normalized_note,
-    )
+        return _restore_compound_version(record, normalized_stream)
+    return _restore_single_file_version(record, normalized_stream)
 
 
 def list_version_records(stream: VersionStreamSpec) -> list[VersionRecord]:
@@ -103,22 +86,52 @@ def current_version_label(
     stream: VersionStreamSpec,
     scene_path: Path,
 ) -> tuple[str | None, str | None]:
-    """Return `(label, title)` for the latest record on `stream`, or
-    `(None, None)` if ``scene_path`` is outside it or the stream is empty.
-
-    TODO: Returns the latest record on the stream, not whatever version
-    `scene_path` itself happens to be, so opening an older backup still
-    shows the highest saved version
+    """Return `(label, title)` for the version whose snapshot matches
+    ``scene_path`` byte-for-byte, or `(None, None)` when the file is outside
+    the stream or holds un-versioned work.
     """
-    if not path_matches_stream(scene_path, stream):
+    normalized_stream = _normalize_stream(stream)
+    if not path_matches_stream(scene_path, normalized_stream):
         return None, None
-    records = list_version_records(stream)
-    if not records:
+    match = _match_record_for_file(
+        Path(scene_path),
+        list_version_records(normalized_stream),
+        normalized_stream,
+    )
+    if match is None:
         return None, None
-    latest = records[0]
-    if latest.version is None:
-        return None, latest.title
-    return version_label(latest.version), latest.title
+    if match.version is None:
+        return None, match.title
+    return version_label(match.version), match.title
+
+
+def resolve_working_file_version(stream: VersionStreamSpec) -> int | None:
+    """Return the version whose snapshot matches the working file, or ``None``
+    when the working file is missing or holds un-versioned work.
+    """
+    normalized_stream = _normalize_stream(stream)
+    working_path = normalized_stream.working_path
+    if working_path is None or not working_path.is_file():
+        return None
+    match = _match_record_for_file(
+        working_path,
+        list_version_records(normalized_stream),
+        normalized_stream,
+    )
+    return match.version if match else None
+
+
+def saved_message(record: VersionRecord) -> str:
+    """Confirmation text for a freshly saved version."""
+    return f'Saved {version_label(record.version)} "{record.title or "(untitled)"}".'
+
+
+def restored_message(record: VersionRecord) -> str:
+    """Confirmation text for a version restored into the working file."""
+    return (
+        f"Restored {version_label(record.version)} "
+        f'"{record.title or "(untitled)"}" into the working file.'
+    )
 
 
 def _save_single_file_version(
@@ -178,68 +191,28 @@ def _save_single_file_version(
     )
 
 
-def _promote_single_file_version(
+def _restore_single_file_version(
     record: VersionRecord,
     stream: VersionStreamSpec,
-    *,
-    title: str,
-    note: Optional[str],
-) -> VersionRecord:
-    assert stream.stream_key is not None
+) -> Path:
+    if stream.working_path is None:
+        raise ValueError("Cannot restore version: stream has no working file path.")
     if record.backup_path is None:
-        raise ValueError("Cannot promote version: selected record has no backup path.")
+        raise ValueError("Cannot restore version: selected version has no backup file.")
 
-    source_backup = _resolve_record_backup_path(record.backup_path, stream)
-    if not source_backup.exists() or not source_backup.is_file():
-        raise ValueError(
-            f"Cannot promote version: backup source does not exist: {source_backup}"
-        )
+    source = _resolve_record_backup_path(record.backup_path, stream)
+    if not source.is_file():
+        raise ValueError(f"Cannot restore version: version file is missing: {source}")
 
-    version = next_version(stream.backup_dir, stream.stem, stream.ext)
-    backup_path = backup_file(
-        source_backup,
-        stream.backup_dir,
-        stem=stream.stem,
-        ext=stream.ext,
-        version=version,
-        ensure_exists=True,
-    )
-    if backup_path is None:
-        raise RuntimeError(f"Failed to promote backup file {source_backup}")
+    _copy_atomic(source, stream.working_path)
+    return stream.working_path
 
-    manifest = record_publish(
-        stream.manifest_path,
-        dcc=stream.dcc,
-        stream_key=stream.stream_key,
-        stem=stream.stem,
-        ext=stream.ext,
-        stream_label=stream.label,
-        working_path=stream.working_path,
-        source_path=source_backup,
-        backup_path=backup_path,
-        version=version,
-        title=title,
-        context=_PROMOTED_CONTEXT,
-        note=note,
-        owner=stream.owner,
-    )
-    return _record_from_manifest(
-        manifest=manifest,
-        stream_key=stream.stream_key,
-        fallback_dcc=stream.dcc,
-        version=version,
-        backup_path=backup_path,
-        fallback=VersionRecord(
-            version=version,
-            title=title,
-            note=note,
-            context=_PROMOTED_CONTEXT,
-            user=None,
-            timestamp=None,
-            backup_path=backup_path,
-            source_file=str(source_backup),
-        ),
-    )
+
+def _copy_atomic(source: Path, target: Path) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = target.with_name(f".{target.name}.restore.tmp")
+    shutil.copy2(source, temp_path)
+    os.replace(temp_path, target)
 
 
 def _list_single_file_version_records(stream: VersionStreamSpec) -> list[VersionRecord]:
@@ -342,71 +315,29 @@ def _save_compound_version(
     )
 
 
-def _promote_compound_version(
+def _restore_compound_version(
     record: VersionRecord,
     stream: VersionStreamSpec,
-    *,
-    title: str,
-    note: Optional[str],
-) -> VersionRecord:
-    assert stream.stream_key is not None
-    source_root = _resolve_record_backup_root(record, stream)
-    if source_root is None:
-        raise ValueError(
-            "Cannot promote version: selected record has no compound backup root."
-        )
+) -> Path:
+    backup_root = _resolve_record_backup_root(record, stream)
+    if backup_root is None:
+        raise ValueError("Cannot restore version: selected version has no snapshot.")
 
-    source_backup = _resolve_compound_record_backup_path(record, stream, source_root)
-    if not source_backup.exists() or not source_backup.is_file():
-        raise ValueError(
-            f"Cannot promote version: backup source does not exist: {source_backup}"
-        )
+    captured = set(_record_member_paths(record, stream))
+    for member in stream.snapshot_members:
+        if member.relative_path.as_posix() not in captured:
+            continue
+        source = (backup_root / member.relative_path).expanduser().resolve()
+        if not source.is_file():
+            if member.required:
+                raise ValueError(
+                    f"Cannot restore version: snapshot file is missing: {source}"
+                )
+            continue
+        _copy_atomic(source, stream.root_path / member.relative_path)
 
-    version = next_bundle_version(stream.backup_dir)
-    backup_root, backup_path, backup_members = _backup_compound_snapshot(
-        source_root,
-        stream,
-        version=version,
-        member_paths=_record_member_paths(record, stream),
-    )
-
-    manifest = record_publish(
-        stream.manifest_path,
-        dcc=stream.dcc,
-        stream_key=stream.stream_key,
-        stem=stream.stem,
-        ext=stream.ext,
-        stream_label=stream.label,
-        working_path=stream.working_path,
-        source_path=source_backup,
-        backup_path=backup_path,
-        backup_root=backup_root,
-        backup_members=list(backup_members),
-        version=version,
-        title=title,
-        context=_PROMOTED_CONTEXT,
-        note=note,
-        owner=stream.owner,
-    )
-    return _record_from_manifest(
-        manifest=manifest,
-        stream_key=stream.stream_key,
-        fallback_dcc=stream.dcc,
-        version=version,
-        backup_path=backup_path,
-        fallback=VersionRecord(
-            version=version,
-            title=title,
-            note=note,
-            context=_PROMOTED_CONTEXT,
-            user=None,
-            timestamp=None,
-            backup_path=backup_path,
-            source_file=str(source_backup),
-            backup_root=backup_root,
-            backup_members=backup_members,
-        ),
-    )
+    primary = _primary_snapshot_member(stream)
+    return (stream.root_path / primary.relative_path).resolve()
 
 
 def _list_compound_version_records(stream: VersionStreamSpec) -> list[VersionRecord]:
@@ -657,6 +588,39 @@ def _record_member_paths(
     return tuple(member.relative_path.as_posix() for member in stream.snapshot_members)
 
 
+def _match_record_for_file(
+    file_path: Path,
+    records: list[VersionRecord],
+    stream: VersionStreamSpec,
+) -> VersionRecord | None:
+    """Return the newest record whose snapshot equals ``file_path`` byte-for-byte."""
+    file_path = Path(file_path).expanduser().resolve()
+    digest = _content_digest(file_path)
+    if digest is None:
+        return None
+    size = file_path.stat().st_size
+
+    for record in records:
+        if record.backup_path is None:
+            continue
+        backup = _resolve_record_backup_path(record.backup_path, stream)
+        if not backup.is_file() or backup.stat().st_size != size:
+            continue
+        if _content_digest(backup) == digest:
+            return record
+    return None
+
+
+def _content_digest(path: Path) -> str | None:
+    if not path.is_file():
+        return None
+    hasher = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
 def _single_file_record_for_stream(
     record: VersionRecord,
     *,
@@ -878,6 +842,9 @@ __all__ = [
     "current_version_label",
     "list_version_records",
     "path_matches_stream",
-    "promote_version",
+    "resolve_working_file_version",
+    "restore_version",
+    "restored_message",
     "save_version",
+    "saved_message",
 ]

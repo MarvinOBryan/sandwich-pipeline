@@ -179,7 +179,7 @@ class HShotFileManager(HFileManager):
             return
 
         stream, _, _ = resolved
-        self._do_save_version(hip_path, stream)
+        self._write_named_version(hip_path, stream)
 
     def _setup_file(self, path: Path, entity: SGEntity) -> None:
         shot = cast(Shot, entity)
